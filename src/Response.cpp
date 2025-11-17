@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:31 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/17 10:47:55 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/17 12:51:43 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -304,7 +304,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
 	else if (req.method == "POST")
 	{
-		std::string dir = config.data_dir.empty() ? "./pages/posts" : config.data_dir;
+		std::string dir = config.data_dir.empty() ? "./root/data/posts" : config.data_dir;
 		std::string contentType;
 		if (req.headers.count("Content-Type"))
 			contentType = req.headers.find("Content-Type")->second;
