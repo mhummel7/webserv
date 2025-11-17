@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:26 by mhummel           #+#    #+#             */
-/*   Updated: 2025/10/29 12:49:02 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/17 11:27:46 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,6 +38,8 @@
 // std::string errorPath = config.error_dir + "/404.html";          // ./errors/404.html
 // std::string dataPath  = config.data_store;                       // /var/www/data/posts.json
 
+enum Context { GLOBAL, SERVER, LOCATION };
+
 // Struktur für Location-Konfiguration
 struct LocationConfig {
 	std::string path;                  // z.B. "/""
@@ -63,6 +65,7 @@ struct ServerConfig {
 	size_t client_max_body_size;            // Erbt von Global
 };
 
+
 // Haupt-Konfigurationsklasse
 class Config {
 public:
@@ -74,6 +77,17 @@ public:
 	Config();  // Konstruktor mit Default-Werten
 	void parse_c(const std::string& filename);  // Parsen der Config-Datei
 	const std::vector<ServerConfig>& getServers() const { return servers; }
+
+private:
+    // Kleine Helferfunktionen (wie wir besprochen haben)
+    void handleClosingBrace(std::vector<Context>&, ServerConfig*&, LocationConfig*&);
+    void parseServerBlock(std::vector<ServerConfig>&, std::vector<Context>&);
+    void parseLocationBlock(std::ifstream& file, int& lineNum,
+                                std::vector<Context>& stack,
+                                ServerConfig* currentServer,
+                                LocationConfig*& currentLocation,
+                                const std::string& locationLine);
+    void resolveVariables();
 };
 
 #endif
