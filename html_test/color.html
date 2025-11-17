@@ -1,89 +1,112 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>Farb-Cookie</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>
-    body {
-      transition: background-color .2s;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial, sans-serif;
-      padding: 24px;
-    }
-    label, input, button {
-      font: inherit;
-    }
-    button {
-      margin-left: 8px;
-      padding: 6px 14px;
-      cursor: pointer;
-    }
-    #status {
-      margin-top: 12px;
-      font-size: 0.9rem;
-      color: #444;
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Farbauswahl - WebServ</title>
+
 </head>
 <body>
-  <h1>Hintergrundfarbe per Cookie</h1>
+    <div class="container">
+        <a href="index.html" class="btn btn-outline btn-back">← Zurück</a>
 
-  <!-- Kein POST mehr, sondern JS mit GET auf /set-color -->
-  <p>
-    <label for="picker">Farbe auswählen:</label>
-    <input type="color" id="picker" value="#4f46e5" />
-    <button type="button" id="saveBtn">Farbe speichern (Cookie)</button>
-  </p>
-  <p id="status"></p>
+        <div class="content-card">
+            <h2>Farbauswahl mit Cookies</h2>
 
-  <script>
-    function getCookie(name) {
-      const entry = document.cookie
-        .split('; ')
-        .find(r => r.startsWith(name + '='));
-      return entry ? entry.split('=')[1] : null;
-    }
+            <div class="color-preview" id="colorPreview"></div>
 
-    function applyBgFromCookie() {
-      const c = getCookie('bg');
-      if (c) {
-        document.body.style.backgroundColor = decodeURIComponent(c);
-        const picker = document.getElementById('picker');
-        if (picker) picker.value = c;
-      }
-    }
+            <div class="color-grid" id="colorGrid"></div>
 
-    async function saveColor() {
-      const picker = document.getElementById('picker');
-      const status = document.getElementById('status');
-      const color = picker.value; // z.B. "#ff8800"
+            <div class="info-box">
+                <div>Ausgewählte Farbe: <span id="selectedColor">#22d3ee</span></div>
+                <div>Cookie Name: selectedColor</div>
+                <div>Cookie Wert: <span id="cookieValue">nicht gesetzt</span></div>
+            </div>
 
-      status.textContent = 'Speichere Farbe…';
+            <button class="btn btn-outline" onclick="clearCookie()" style="width: 100%; margin-top: 16px;">
+                Cookie löschen
+            </button>
 
-      try {
-        // -> nur GET, kein POST, Cookies setzt dein C++-Code per Response::setCookie
-        const resp = await fetch('/set-color?bg=' + encodeURIComponent(color), {
-          method: 'GET',
-          cache: 'no-store'
-        });
+            <p style="text-align: center; color: #64748b; font-size: 0.85rem; margin-top: 24px;">
+                Diese Seite demonstriert die Cookie-Funktionalität des WebServ
+            </p>
+        </div>
+    </div>
 
-        if (!resp.ok) {
-          status.textContent = 'Fehler vom Server: HTTP ' + resp.status;
-          return;
+    <script>
+        const colors = [
+            { name: 'Cyan', value: '#22d3ee' },
+            { name: 'Blau', value: '#3b82f6' },
+            { name: 'Lila', value: '#a855f7' },
+            { name: 'Rosa', value: '#ec4899' },
+            { name: 'Rot', value: '#ef4444' },
+            { name: 'Orange', value: '#f97316' },
+            { name: 'Gelb', value: '#eab308' },
+            { name: 'Grün', value: '#22c55e' }
+        ];
+
+        let selectedColor = '#22d3ee';
+
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+            return null;
         }
 
-        // Falls der Server jetzt Set-Cookie sendet, ist der Cookie im Browser gesetzt.
-        applyBgFromCookie();
-        status.textContent = 'Farbe gespeichert 😊';
-      } catch (e) {
-        status.textContent = 'Fehler beim Request: ' + e.message;
-      }
-    }
+        function setCookie(name, value, days = 365) {
+            const expires = new Date();
+            expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
+            document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
+        }
 
-    document.getElementById('saveBtn').addEventListener('click', saveColor);
+        function updateDisplay() {
+            document.getElementById('colorPreview').style.backgroundColor = selectedColor;
+            document.getElementById('selectedColor').textContent = selectedColor;
+            const cookieValue = getCookie('selectedColor');
+            document.getElementById('cookieValue').textContent = cookieValue || 'nicht gesetzt';
+            
+            // Update active state
+            document.querySelectorAll('.color-btn').forEach(btn => {
+                if (btn.dataset.color === selectedColor) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+        }
 
-    // Beim Laden direkt Cookie anwenden (falls schon vorhanden)
-    applyBgFromCookie();
-  </script>
+        function selectColor(color) {
+            selectedColor = color;
+            setCookie('selectedColor', color);
+            updateDisplay();
+        }
+
+        function clearCookie() {
+            document.cookie = 'selectedColor=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+            selectedColor = '#22d3ee';
+            updateDisplay();
+        }
+
+        // Initialize color grid
+        const grid = document.getElementById('colorGrid');
+        colors.forEach(color => {
+            const btn = document.createElement('button');
+            btn.className = 'color-btn';
+            btn.style.backgroundColor = color.value;
+            btn.title = color.name;
+            btn.dataset.color = color.value;
+            btn.onclick = () => selectColor(color.value);
+            grid.appendChild(btn);
+        });
+
+        // Load saved color
+        const savedColor = getCookie('selectedColor');
+        if (savedColor) {
+            selectedColor = savedColor;
+        }
+
+        updateDisplay();
+    </script>
 </body>
 </html>

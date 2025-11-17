@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Response.cpp                                       :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:31 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/12 11:52:46 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/17 11:57:04 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -96,13 +96,15 @@ static std::string normalizePath(const std::string& path) {
     return out;
 }
 
-static bool containsPathTraversal(const std::string& s) {
+static bool containsPathTraversal(const std::string& s)
+{
     if (s.find("..") != std::string::npos) return true;
     return false;
 }
 
 // Einfaches join (achtet auf Slashes)
-static std::string joinPath(const std::string& a, const std::string& b) {
+static std::string joinPath(const std::string& a, const std::string& b)
+{
     if (a.empty()) return b;
     if (b.empty()) return a;
     std::string out = a;
@@ -112,7 +114,8 @@ static std::string joinPath(const std::string& a, const std::string& b) {
 }
 
 // MIME-Mapping (erweiterbar)
-static std::string getMimeType(const std::string& path) {
+static std::string getMimeType(const std::string& path)
+{
     static const std::map<std::string, std::string> m = {
         { "html", "text/html" }, { "htm", "text/html" }, { "css", "text/css" },
         { "js", "application/javascript" }, { "json", "application/json" },
@@ -131,7 +134,8 @@ static std::string getMimeType(const std::string& path) {
 }
 
 // Generiere einfaches Verzeichnis-Listing (HTML)
-static std::string generateDirectoryListing(const std::string& dirPath, const std::string& urlPrefix) {
+static std::string generateDirectoryListing(const std::string& dirPath, const std::string& urlPrefix)
+{
     DIR* dp = opendir(dirPath.c_str());
     if (!dp) return "<h1>500 Cannot open directory</h1>";
     std::ostringstream out;
@@ -189,7 +193,6 @@ bool ResponseHandler::fileExists(const std::string& path)
 Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& config)
 {
 	Response res;
-	printf("config_path: %s\n", config.path.c_str());
 
 	res.keep_alive = req.keep_alive;
 	
@@ -201,7 +204,6 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
 	std::string path = config.root + "/" + config.index; // default path 
 		
-	printf("path: %s\n", path.c_str());
 	if (isCGIRequest(req.path))
 	{
 		CGIHandler cgi;
@@ -434,6 +436,11 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 		res.reasonPhrase = getStatusMessage(405);
         res.body = "<h1>405 Method Not Allowed</h1>";
 	}
+	#ifdef DEBUG
+		std::cout << "method : " << req.method << std::endl;
+		std::cout << "path : " << path << std::endl;
+		std::cout << "body : " << req.body << std::endl;
+	#endif
 	res.headers ["Content-Length"] = std::to_string(res.body.size());
 	std::cout << res.toString() << std::endl;
 	return res;
