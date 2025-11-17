@@ -4,26 +4,86 @@
   <meta charset="utf-8" />
   <title>Farb-Cookie</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <style>body{transition:background-color .2s}</style>
+  <style>
+    body {
+      transition: background-color .2s;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial, sans-serif;
+      padding: 24px;
+    }
+    label, input, button {
+      font: inherit;
+    }
+    button {
+      margin-left: 8px;
+      padding: 6px 14px;
+      cursor: pointer;
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 0.9rem;
+      color: #444;
+    }
+  </style>
 </head>
 <body>
   <h1>Hintergrundfarbe per Cookie</h1>
-  <form action="/set-color" method="post">
-    <input type="color" name="bg" value="#4f46e5" />
-    <button type="submit">Setze Cookie (POST /set-color)</button>
-  </form>
-  <p>Nach dem Absenden sollte der Server <code>Set-Cookie: bg=…</code> setzen und mit <code>302 Location: /color</code> zurückleiten.</p>
-  <p>Wenn der Server bei <code>GET /color</code> den Cookie liest, sollte der Hintergrund bereits gefärbt sein.</p>
+
+  <!-- Kein POST mehr, sondern JS mit GET auf /set-color -->
+  <p>
+    <label for="picker">Farbe auswählen:</label>
+    <input type="color" id="picker" value="#4f46e5" />
+    <button type="button" id="saveBtn">Farbe speichern (Cookie)</button>
+  </p>
+  <p id="status"></p>
+
   <script>
-    // Optional: clientseitig anwenden, falls Server (noch) kein Template baut:
-    function getCookie(name){return document.cookie.split('; ').find(r=>r.startsWith(name+'='))?.split('=')[1]}
-    const c = getCookie('bg');
-    if (c) document.body.style.backgroundColor = decodeURIComponent(c);
+    function getCookie(name) {
+      const entry = document.cookie
+        .split('; ')
+        .find(r => r.startsWith(name + '='));
+      return entry ? entry.split('=')[1] : null;
+    }
+
+    function applyBgFromCookie() {
+      const c = getCookie('bg');
+      if (c) {
+        document.body.style.backgroundColor = decodeURIComponent(c);
+        const picker = document.getElementById('picker');
+        if (picker) picker.value = c;
+      }
+    }
+
+    async function saveColor() {
+      const picker = document.getElementById('picker');
+      const status = document.getElementById('status');
+      const color = picker.value; // z.B. "#ff8800"
+
+      status.textContent = 'Speichere Farbe…';
+
+      try {
+        // -> nur GET, kein POST, Cookies setzt dein C++-Code per Response::setCookie
+        const resp = await fetch('/set-color?bg=' + encodeURIComponent(color), {
+          method: 'GET',
+          cache: 'no-store'
+        });
+
+        if (!resp.ok) {
+          status.textContent = 'Fehler vom Server: HTTP ' + resp.status;
+          return;
+        }
+
+        // Falls der Server jetzt Set-Cookie sendet, ist der Cookie im Browser gesetzt.
+        applyBgFromCookie();
+        status.textContent = 'Farbe gespeichert 😊';
+      } catch (e) {
+        status.textContent = 'Fehler beim Request: ' + e.message;
+      }
+    }
+
+    document.getElementById('saveBtn').addEventListener('click', saveColor);
+
+    // Beim Laden direkt Cookie anwenden (falls schon vorhanden)
+    applyBgFromCookie();
   </script>
-  <pre>
-curl -i -X POST http://localhost:8080/set-color \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  --data "bg=%23ff8800"
-  </pre>
 </body>
 </html>

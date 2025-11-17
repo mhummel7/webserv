@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.hpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nicolewicki <nicolewicki@student.42.fr>    +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:38 by mhummel           #+#    #+#             */
-/*   Updated: 2025/10/27 10:24:15 by nicolewicki      ###   ########.fr       */
+/*   Updated: 2025/11/17 10:23:24 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,7 +31,7 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <sstream>
-#include "http_bridge.hpp"
+// #include "http_bridge.hpp" //file kann man loeschen und die anderen .hpp in include rein
 #include "HTTPHandler.hpp"
 #include "Response.hpp"
 #include "config.hpp"

@@ -18,6 +18,10 @@ Start of a webserver
 test
 
 
+Todo:
+.hpp in include
+http_bridge loeaschen (alte file)
+code etwas aufraeumen
 
 
 
