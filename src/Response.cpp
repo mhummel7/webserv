@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Response.cpp                                       :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:31 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/12 11:52:46 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/17 10:47:55 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -135,7 +135,7 @@ static std::string generateDirectoryListing(const std::string& dirPath, const st
     DIR* dp = opendir(dirPath.c_str());
     if (!dp) return "<h1>500 Cannot open directory</h1>";
     std::ostringstream out;
-    out << "<!doctype html><html><head><meta charset=\"utf-8\"><title>Index of " 
+    out << "<!doctype html><html><head><meta charset=\"utf-8\"><title>Index of "
         << urlPrefix << "</title></head><body>";
     out << "<h1>Index of " << urlPrefix << "</h1><ul>";
     struct dirent* e;
@@ -192,15 +192,15 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 	printf("config_path: %s\n", config.path.c_str());
 
 	res.keep_alive = req.keep_alive;
-	
+
 	// default headers
 	res.headers["Server"] = "webserv/1.0";
     // res.headers["Connection"] = "close";
 	res.headers["Keep-Alive"] = req.keep_alive ? "timeout=5, max=100" : "timeout=0, max=0";
     res.headers["Content-Type"] = "text/html";
 
-	std::string path = config.root + "/" + config.index; // default path 
-		
+	std::string path = config.root + "/" + config.index; // default path
+
 	printf("path: %s\n", path.c_str());
 	if (isCGIRequest(req.path))
 	{
@@ -227,7 +227,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 		//    Build filesystem path relative to location.root
 		std::string fsPath = config.root;
 		if (fsPath.empty()) fsPath = "."; // fallback
-		// strip location path prefix if present: assume req.path is the full URL path; 
+		// strip location path prefix if present: assume req.path is the full URL path;
 		// if location.path is not "/", remove prefix
 		std::string trimmedUrl = url;
 		if (!config.path.empty() && config.path != "/" && trimmedUrl.find(config.path) == 0) {
@@ -304,7 +304,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
 	else if (req.method == "POST")
 	{
-		std::string dir = config.data_dir.empty() ? "./data" : config.data_dir;
+		std::string dir = config.data_dir.empty() ? "./pages/posts" : config.data_dir;
 		std::string contentType;
 		if (req.headers.count("Content-Type"))
 			contentType = req.headers.find("Content-Type")->second;
