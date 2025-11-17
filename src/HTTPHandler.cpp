@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/17 12:10:13 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/17 13:28:29 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -90,7 +90,7 @@ Request RequestParser::parse(const std::string& rawRequest)
     std::string line;
 
     //output Request path for debug
-    std::cout << "Raw Request:\n" << rawRequest << std::endl;
+    // std::cout << "Raw Request:\n" << rawRequest << std::endl;
     // Read and parse the request-line once
     if (!std::getline(stream, line))
         return req; // empty request
