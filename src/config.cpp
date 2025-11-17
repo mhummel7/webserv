@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/17 11:31:14 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/17 12:32:35 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -99,7 +99,7 @@ void Config::parseLocationBlock(std::ifstream& file, int& lineNum,
         std::string p;
         while (iss >> p) params.push_back(p);
 
-        if (key == "root" && !params.empty()) currentLocation->root = "./" + params[0];
+        if (key == "root" && !params.empty()) currentLocation->root = params[0];
         else if (key == "index" && !params.empty()) currentLocation->index = params[0];
         else if (key == "autoindex" && !params.empty()) currentLocation->autoindex = (params[0] == "on");
         else if (key == "allow_methods" && !params.empty()) currentLocation->methods = params;
