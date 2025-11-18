@@ -1,166 +1,194 @@
-<!-- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Dateien hochladen - WebServ</title>
+    <meta charset="UTF-8">
+    <title>Datei Upload – WebServ</title>
 
     <style>
-        * {
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif;
-            background: radial-gradient(circle at top, #e0e7ff, #f5f6fa);
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
             margin: 0;
-            padding: 0;
-            color: #111827;
+            padding: 20px;
         }
 
-        .container {
+        /* zentrierter Inhalt */
+        .wrapper {
             max-width: 900px;
             margin: 0 auto;
-            padding: 32px 20px 40px;
         }
 
-        .btn-back {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 9px 14px;
-            background: white;
-            border-radius: 999px;
-            border: 1px solid #4f46e5;
-            color: #4f46e5;
-            font-size: 0.9rem;
+        a.back {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #333;
             text-decoration: none;
-            transition: background 0.15s, color 0.15s, box-shadow 0.15s;
-            margin-bottom: 24px;
+            font-size: 14px;
+            padding: 6px 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #fff;
         }
 
-        .btn-back:hover {
-            background: #4f46e5;
-            color: white;
-            box-shadow: 0 5px 14px rgba(79, 70, 229, 0.25);
-        }
-
-        .content-card {
+        .card {
             background: white;
-            padding: 22px 22px 24px;
-            border-radius: 16px;
-            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
         }
 
-        .content-card + .content-card {
-            margin-top: 24px;
+        .card h2 {
+            margin-top: 0;
         }
 
-        h1 {
-            margin: 0 0 6px;
-            font-size: 1.6rem;
-            font-weight: 700;
-            letter-spacing: -0.02em;
-        }
-
-        h2 {
-            margin: 0 0 18px;
-            font-weight: 600;
-            font-size: 1.15rem;
-        }
-
-        .page-subtitle {
-            margin: 0 0 18px;
-            color: #6b7280;
-            font-size: 0.95rem;
-        }
-
-        /* Großes rechteckiges Upload-Feld */
-        .file-box {
+        /* WICHTIG: block + width:100% */
+        .upload-box {
+            display: block;
             width: 100%;
-            padding: 40px 24px;
-            border: 2px dashed #4f46e5;
-            border-radius: 16px;
+            background: #e5e5e5;
+            border: 2px dashed #999;
+            padding: 30px;
             text-align: center;
             cursor: pointer;
-            transition: background 0.15s, border-color 0.15s, box-shadow 0.15s, transform 0.06s;
-            margin-bottom: 16px;
-            background: #f9fafb;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-bottom: 10px;
         }
 
-        .file-box:hover {
-            background: #eef2ff;
-            border-color: #4338ca;
-            box-shadow: 0 8px 20px rgba(79, 70, 229, 0.16);
-            transform: translateY(-1px);
-        }
-
-        .file-box-icon {
-            font-size: 2.1rem;
-            margin-bottom: 8px;
-        }
-
-        .file-box-main {
-            font-size: 1.05rem;
-            color: #111827;
-            font-weight: 600;
-        }
-
-        .file-box-sub {
-            margin-top: 4px;
-            font-size: 0.9rem;
-            color: #6b7280;
-        }
-
-        .file-box input[type="file"] {
+        .upload-box input[type="file"] {
             display: none;
         }
 
-        .btn {
-            background: #4f46e5;
+        button {
+            width: 100%;
+            margin-top: 5px;
+            padding: 10px;
+            font-size: 16px;
+            background: #333;
             color: white;
             border: none;
-            padding: 11px 16px;
-            border-radius: 999px;
+            border-radius: 4px;
             cursor: pointer;
-            font-size: 0.97rem;
-            font-weight: 500;
-            transition: background 0.15s, box-shadow 0.15s, transform 0.06s;
-            width: 100%;
         }
 
-        .btn:hover {
-            background: #4338ca;
-            box-shadow: 0 10px 24px rgba(67, 56, 202, 0.28);
-            transform: translateY(-1px);
+        .file-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
         }
 
-        .btn:active {
-            transform: translateY(0);
-            box-shadow: 0 6px 16px rgba(67, 56, 202, 0.18);
+        .file-item:last-child {
+            border-bottom: none;
         }
 
-        .btn-delete {
-            background: #ef4444;
-            padding: 6px 10px;
-            font-size: 0.8rem;
-            width: auto;
-            border-radius: 999px;
+        .file-item a.open-link {
+            padding: 3px 6px;
+            color: white;
+            background: #333;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
         }
 
-        .btn-delete:hover {
-            background: #dc2626;
-            box-shadow: 0 6px 18px rgba(220, 38, 38, 0.28);
+        .delete-btn {
+            background: red;
+            border-radius: 4px;
+            padding: 3px 6px;
+            margin-left: 6px;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            border: none;
         }
+    </style>
+</head>
 
-        .posts-list {
-            margin-top: 8px;
+<body>
+<div class="wrapper">
+    <a href="index.html" class="back">← Zurück</a>
+
+    <div class="card">
+        <h2>Datei hochladen</h2>
+
+        <form id="uploadForm" onsubmit="submitUpload(event)">
+            <label class="upload-box">
+                <span id="fileLabel">Klicke hier, um eine Datei auszuwählen</span>
+                <input type="file" id="fileInput" name="file" required onchange="updateFileLabel()">
+            </label>
+
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>Hochgeladene Dateien</h2>
+        <div id="posts"></div>
+    </div>
+</div>
+
+<script>
+    function updateFileLabel() {
+        const input = document.getElementById("fileInput");
+        const label = document.getElementById("fileLabel");
+        label.textContent = input.files.length
+            ? input.files[0].name
+            : "Klicke hier, um eine Datei auszuwählen";
+    }
+
+    async function loadPosts() {
+        const div = document.getElementById("posts");
+
+        try {
+            const response = await fetch("/posts");
+            if (!response.ok) {
+                div.innerHTML = "Fehler beim Laden.";
+                return;
+            }
+
+            const posts = await response.json();
+
+            if (!posts.length) {
+                div.innerHTML = "Noch keine Dateien.";
+                return;
+            }
+
+            div.innerHTML = posts.map(p => {
+                const name = p.name || p.filename;
+                return `
+                    <div class="file-item">
+                        ${name}
+                        <a class="open-link" href="/uploads/${encodeURIComponent(name)}" target="_blank">Öffnen</a>
+                        <button class="delete-btn" onclick="deleteFile('${encodeURIComponent(name)}')">Löschen</button>
+                    </div>
+                `;
+            }).join("");
+        } catch {
+            div.innerHTML = "Fehler beim Laden.";
         }
+    }
 
-        .empty-state {
-            text-align: center;
-            color: #6b7280;
-            padding: 18px 0;
-            font-size: 0.9rem;
-            font-style: italic;
-        } -->
+    async function submitUpload(event) {
+        event.preventDefault();
+
+        const input = document.getElementById("fileInput");
+        if (!input.files.length) return;
+
+        const formData = new FormData();
+        formData.append("file", input.files[0]);
+
+        await fetch("/posts", { method: "POST", body: formData });
+
+        input.value = "";
+        updateFileLabel();
+        loadPosts();
+    }
+
+    async function deleteFile(name) {
+        await fetch("/posts/" + name, { method: "DELETE" });
+        loadPosts();
+    }
+
+    loadPosts();
+</script>
+</body>
+</html>
