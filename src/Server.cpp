@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/17 12:33:17 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/18 12:39:06 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -76,6 +76,8 @@ static int add_listener(uint16_t port)
     if (make_nonblocking(s) < 0)                  { perror("fcntl");  ::close(s); return -1; }
 
     pollfd p{}; p.fd = s; p.events = POLLIN; p.revents = 0;
+    //fds debug print
+    // std::cout << "Added listener fd=" << s << " on port " << port << "\n";
     fds.push_back(p);
     clients.push_back(Client{}); // Dummy, hält Index-Sync
     listener_fds.insert(s);
@@ -245,11 +247,15 @@ int main(int argc, char** argv)
                 for (;;)
 				{
                     ssize_t n = ::read(fds[i].fd, buf, sizeof(buf));
+                    //DEBUG read check
+                    // std::cout << "========= Read returned buf=" << buf << " =========" << std::endl;
                     if (n > 0)
 					{
                         Client &c = clients[i];
                         c.last_active_ms = now_ms;
                         c.rx.append(buf, n);
+                        //DEBG c.rx
+                        // std::cout << "----- c.rx " <<c.rx << " -----" << std::endl;
 
 // ------ hier Leo sein Zeug rein
 // ------ aus raw string alles rausgeholt und in Request struct

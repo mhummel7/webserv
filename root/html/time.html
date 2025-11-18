@@ -1,25 +1,125 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>Serverzeit</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uhrzeit - WebServ</title>
+
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif;
+            background: #f5f6fa;
+            margin: 0;
+            padding: 0;
+            color: #222;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 32px 20px;
+        }
+
+        .btn-back {
+            display: inline-block;
+            padding: 10px 16px;
+            background: white;
+            border-radius: 8px;
+            border: 2px solid #4f46e5;
+            color: #4f46e5;
+            font-size: 0.95rem;
+            text-decoration: none;
+            transition: background .15s, color .15s;
+            margin-bottom: 24px;
+        }
+
+        .btn-back:hover {
+            background: #4f46e5;
+            color: white;
+        }
+
+        .content-card {
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        h2 {
+            margin-top: 0;
+            font-weight: 700;
+            margin-bottom: 18px;
+        }
+
+        .output-box {
+            background: #f0f2f7;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 16px;
+            white-space: pre-wrap;
+            font-family: monospace;
+            font-size: 1rem;
+            color: #333;
+        }
+
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+
+        .btn-refresh {
+            margin-top: 16px;
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background .15s;
+        }
+
+        .btn-refresh:hover {
+            background: #4338ca;
+        }
+    </style>
 </head>
+
 <body>
-  <h1>Serverzeit</h1>
-  <p>Antwort von <code>GET /time</code>:</p>
-  <pre id="out">(lädt…)</pre>
-  <button id="reload">Neu laden</button>
-  <script>
-    async function load() {
-      const r = await fetch('/time', {cache:'no-store'});
-      const text = await r.text();
-      document.getElementById('out').textContent =
-        text + "\n\nStatus: " + r.status + " " + r.statusText +
-        "\nContent-Type: " + (r.headers.get('content-type')||'(none)');
-    }
-    document.getElementById('reload').onclick = load;
-    load();
-  </script>
+    <div class="container">
+        <a href="index.html" class="btn-back">← Zurück</a>
+
+        <div class="content-card">
+            <h2>Uhrzeit CGI-Skript</h2>
+
+            <p>Dies ruft <code>/cgi-bin/time.py</code> auf und zeigt die Ausgabe an.</p>
+
+            <div id="output" class="output-box loading">
+                Lade Uhrzeit…
+            </div>
+
+            <button class="btn-refresh" onclick="loadTime()">🔄 Aktualisieren</button>
+        </div>
+    </div>
+
+    <script>
+        function loadTime() {
+            const box = document.getElementById('output');
+            box.textContent = "Lade Uhrzeit…";
+
+            fetch('/cgi-bin/time.py', { cache: "no-store" })
+                .then(r => r.text())
+                .then(txt => {
+                    box.classList.remove("loading");
+                    box.innerHTML = txt;
+                })
+                .catch(err => {
+                    box.innerHTML = "<b>Fehler:</b> " + err;
+                });
+        }
+
+        // Beim Seitenladen direkt CGI laden:
+        loadTime();
+    </script>
 </body>
 </html>

@@ -1,99 +1,152 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>Webserv</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <link rel="icon" href="data:,"><!-- verhindert /favicon.ico -->
-  <style>
-    :root{
-      --panel:#1f6bff;     /* Blau wie im Screenshot */
-      --blob:#a78bfa;      /* Lila Blobs */
-      --ink:#1b1b1b;
-    }
-    *{box-sizing:border-box}
-    html,body{height:100%}
-    body{
-      margin:0;
-      background:#80868b;  /* grauer Hintergrund */
-      font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,Arial,sans-serif;
-      display:flex;
-      justify-content:center;
-      align-items:flex-start;
-      color:#fff;
-    }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebServ - HTTP/1.1 Server Demo</title>
 
-    /* Panel (blauer Kasten) */
-    .panel{
-      width:min(90vw, 880px);
-      margin:40px;
-      background:var(--panel);
-      border-radius:10px;
-      padding:40px;
-      box-shadow:0 8px 28px rgba(0,0,0,.25);
-      text-align:center;
-      min-height:480px;
-    }
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, sans-serif;
+            background: #f5f6fa;
+            margin: 0;
+            padding: 0;
+            color: #222;
+        }
 
-    h1{
-      margin:0 0 100px;
-      font-weight:700;
-      font-size:52px;
-      letter-spacing:.5px;
-    }
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
 
-    .buttons{
-      display:flex;
-      justify-content:center;
-      gap:36px;
-      flex-wrap:wrap;
-    }
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
 
-    /* Blob-Buttons */
-    .blob{
-      --w: 180px; --h: 80px;
-      width:var(--w); height:var(--h);
-      background:var(--blob);
-      color:#1b1b1b;
-      font-weight:700;
-      font-size:20px;
-      display:flex;
-      align-items:center; justify-content:center;
-      text-decoration:none;
-      border-radius:40% 60% 55% 45% / 60% 40% 60% 40%;
-      border:2px solid rgba(0,0,0,.25);
-      box-shadow:
-        inset 0 -2px 0 rgba(0,0,0,.08),
-        0 6px 16px rgba(0,0,0,.25);
-      transition:transform .12s ease, box-shadow .12s ease;
-    }
-    .blob:nth-child(2){ border-radius:50% 50% 45% 55% / 55% 45% 55% 45%; }
-    .blob:nth-child(3){ border-radius:55% 45% 60% 40% / 45% 55% 40% 60%; }
+        .header h1 {
+            font-size: 3rem;
+            margin: 0;
+            font-weight: 800;
+        }
 
-    .blob:hover{
-      transform:translateY(-3px);
-      box-shadow:0 10px 22px rgba(0,0,0,.35);
-    }
-    .blob:active{
-      transform:translateY(0);
-      box-shadow:0 6px 16px rgba(0,0,0,.25);
-    }
+        .title-web {
+            color: #4f46e5;   /* Indigo */
+        }
 
-    @media (max-width:650px){
-      h1{font-size:40px}
-      .blob{ --w: 140px; --h: 68px; font-size:18px; }
-    }
-  </style>
+        .title-serv {
+            color: #111;      /* Schwarz */
+        }
+
+        .header p {
+            margin-top: 8px;
+            font-size: 1.1rem;
+            color: #555;
+        }
+
+        /* Card Grid */
+        .card-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 20px;
+        }
+
+        /* Card Style */
+        .card {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            cursor: pointer;
+            transition: transform .15s, box-shadow .15s;
+            text-align: center;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+        }
+
+        .card-icon {
+            font-size: 3rem;
+            margin-bottom: 12px;
+        }
+
+        .card h2 {
+            margin: 0;
+            font-size: 1.4rem;
+            margin-bottom: 8px;
+            color: #222;
+        }
+
+        .card p {
+            margin: 0;
+            color: #666;
+            margin-bottom: 18px;
+        }
+
+        .btn {
+            background: #4f46e5;
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background .15s;
+        }
+
+        .btn:hover {
+            background: #4338ca;
+        }
+
+        footer {
+            margin-top: 45px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9rem;
+        }
+    </style>
+
 </head>
 <body>
-  <div class="panel">
-    <h1>Webserv</h1>
-    <div class="buttons">
-      <a class="blob" href="time.html">Zeit</a>
-      <a class="blob" href="blog.html">Blog</a>
-      <a class="blob" href="color.html">Farbe</a>
+    <div class="container">
+        <div class="header">
+            <h1>
+                <span class="title-web">Web</span><span class="title-serv">Serv</span>
+            </h1>
+            <p>HTTP/1.1 Server Demo</p>
+        </div>
+
+        <div class="card-grid">
+
+            <div class="card" onclick="location.href='time.html'">
+                <div class="card-icon">🕐</div>
+                <h2>Uhrzeit Script</h2>
+                <p>CGI-Script mit aktueller Uhrzeit</p>
+                <button class="btn">Öffnen</button>
+            </div>
+
+            <div class="card" onclick="location.href='color.html'">
+                <div class="card-icon">🎨</div>
+                <h2>Farbauswahl</h2>
+                <p>Cookie-Speicherung demonstrieren</p>
+                <button class="btn">Öffnen</button>
+            </div>
+
+            <div class="card" onclick="location.href='blog.html'">
+                <div class="card-icon">📝</div>
+                <h2>Blog</h2>
+                <p>Posts erstellen und löschen</p>
+                <button class="btn">Öffnen</button>
+            </div>
+
+        </div>
+
+        <footer>
+            © 2025 WebServ Demo
+        </footer>
     </div>
-  </div>
 </body>
 </html>
-

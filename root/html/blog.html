@@ -1,151 +1,194 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8" />
-  <title>Mein 42 Blog</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root {
-      --accent: #1f6bff;
-      --border: #ddd;
-    }
+    <meta charset="UTF-8">
+    <title>Datei Upload – WebServ</title>
 
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Arial, sans-serif;
-      background: #f2f2f2;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      padding: 40px;
-      min-height: 100vh;
-    }
-
-    .container {
-      width: 100%;
-      max-width: 700px;
-      background: #fff;
-      border-radius: 12px;
-      box-shadow: 0 6px 20px rgba(0,0,0,0.15);
-      padding: 32px 40px 48px;
-      position: relative;
-    }
-
-    /* Zurück-Button oben links */
-    .back-btn {
-      position: absolute;
-      top: 20px;
-      left: 20px;
-      background: var(--accent);
-      color: #fff;
-      padding: 8px 14px;
-      border-radius: 6px;
-      text-decoration: none;
-      font-weight: 600;
-      font-size: 14px;
-      transition: background 0.2s ease;
-    }
-    .back-btn:hover { background: #0f54d0; }
-
-    h1 {
-      text-align: center;
-      margin-top: 0;
-      color: var(--accent);
-    }
-
-    form {
-      margin-top: 24px;
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-    }
-
-    input, textarea {
-      font: inherit;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      width: 100%;
-    }
-
-    button {
-      align-self: center;
-      padding: 10px 24px;
-      font-weight: 600;
-      background: var(--accent);
-      border: none;
-      color: #fff;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: background 0.2s ease;
-    }
-
-    button:hover { background: #0f54d0; }
-
-    h2 {
-      margin-top: 48px;
-      text-align: center;
-      color: #333;
-    }
-
-    .post {
-      border: 1px solid var(--border);
-      padding: 16px 20px;
-      border-radius: 10px;
-      margin: 16px 0;
-      background: #fafafa;
-    }
-
-    .post h3 { margin: 0 0 6px; color: #111; }
-    .post small { color: #666; }
-    .muted { color: #999; text-align: center; }
-
-  </style>
-</head>
-<body>
-  <div class="container">
-    <a class="back-btn" href="index.html">← Zurück</a>
-
-    <h1>Mein Blog</h1>
-
-    <!-- POST FORMULAR -->
-    <form action="/posts" method="POST">
-      <input name="title" placeholder="Titel" required />
-      <textarea name="content" placeholder="Inhalt..." required></textarea>
-      <button type="submit">Posten</button>
-    </form>
-
-    <h2>Alle Posts</h2>
-    <div id="posts" class="posts"></div>
-  </div>
-
-  <script>
-    async function loadPosts() {
-      const out = document.getElementById('posts');
-      try {
-        const r = await fetch('/posts', { headers: { 'accept': 'application/json' }, cache: 'no-store' });
-        if (!r.ok) throw new Error('HTTP ' + r.status);
-        const posts = await r.json();
-        out.innerHTML = '';
-        if (!posts.length) {
-          out.innerHTML = '<p class="muted"><i>Keine Posts vorhanden.</i></p>';
-          return;
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f0f0f0;
+            margin: 0;
+            padding: 20px;
         }
-        posts.forEach(p => {
-          const html = `
-            <div class="post">
-              <h3>${p.title}</h3>
-              <p><small>${p.timestamp || ''}</small></p>
-              <p>${(p.content || '').replace(/\n/g, '<br>')}</p>
-            </div>`;
-          out.innerHTML += html;
-        });
-      } catch (e) {
-        out.innerHTML = `<p class="muted">Fehler beim Laden: ${e.message}</p>`;
-      }
+
+        /* zentrierter Inhalt */
+        .wrapper {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+
+        a.back {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #333;
+            text-decoration: none;
+            font-size: 14px;
+            padding: 6px 10px;
+            border: 1px solid #333;
+            border-radius: 4px;
+            background: #fff;
+        }
+
+        .card {
+            background: white;
+            padding: 20px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+        }
+
+        .card h2 {
+            margin-top: 0;
+        }
+
+        /* WICHTIG: block + width:100% */
+        .upload-box {
+            display: block;
+            width: 100%;
+            background: #e5e5e5;
+            border: 2px dashed #999;
+            padding: 30px;
+            text-align: center;
+            cursor: pointer;
+            border-radius: 6px;
+            box-sizing: border-box;
+            margin-bottom: 10px;
+        }
+
+        .upload-box input[type="file"] {
+            display: none;
+        }
+
+        button {
+            width: 100%;
+            margin-top: 5px;
+            padding: 10px;
+            font-size: 16px;
+            background: #333;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        .file-item {
+            padding: 10px 0;
+            border-bottom: 1px solid #ccc;
+        }
+
+        .file-item:last-child {
+            border-bottom: none;
+        }
+
+        .file-item a.open-link {
+            padding: 3px 6px;
+            color: white;
+            background: #333;
+            text-decoration: none;
+            border-radius: 4px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+
+        .delete-btn {
+            background: red;
+            border-radius: 4px;
+            padding: 3px 6px;
+            margin-left: 6px;
+            color: white;
+            font-size: 12px;
+            cursor: pointer;
+            border: none;
+        }
+    </style>
+</head>
+
+<body>
+<div class="wrapper">
+    <a href="index.html" class="back">← Zurück</a>
+
+    <div class="card">
+        <h2>Datei hochladen</h2>
+
+        <form id="uploadForm" onsubmit="submitUpload(event)">
+            <label class="upload-box">
+                <span id="fileLabel">Klicke hier, um eine Datei auszuwählen</span>
+                <input type="file" id="fileInput" name="file" required onchange="updateFileLabel()">
+            </label>
+
+            <button type="submit">Upload</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>Hochgeladene Dateien</h2>
+        <div id="posts"></div>
+    </div>
+</div>
+
+<script>
+    function updateFileLabel() {
+        const input = document.getElementById("fileInput");
+        const label = document.getElementById("fileLabel");
+        label.textContent = input.files.length
+            ? input.files[0].name
+            : "Klicke hier, um eine Datei auszuwählen";
+    }
+
+    async function loadPosts() {
+        const div = document.getElementById("posts");
+
+        try {
+            const response = await fetch("/posts");
+            if (!response.ok) {
+                div.innerHTML = "Fehler beim Laden.";
+                return;
+            }
+
+            const posts = await response.json();
+
+            if (!posts.length) {
+                div.innerHTML = "Noch keine Dateien.";
+                return;
+            }
+
+            div.innerHTML = posts.map(p => {
+                const name = p.name || p.filename;
+                return `
+                    <div class="file-item">
+                        ${name}
+                        <a class="open-link" href="/uploads/${encodeURIComponent(name)}" target="_blank">Öffnen</a>
+                        <button class="delete-btn" onclick="deleteFile('${encodeURIComponent(name)}')">Löschen</button>
+                    </div>
+                `;
+            }).join("");
+        } catch {
+            div.innerHTML = "Fehler beim Laden.";
+        }
+    }
+
+    async function submitUpload(event) {
+        event.preventDefault();
+
+        const input = document.getElementById("fileInput");
+        if (!input.files.length) return;
+
+        const formData = new FormData();
+        formData.append("file", input.files[0]);
+
+        await fetch("/posts", { method: "POST", body: formData });
+
+        input.value = "";
+        updateFileLabel();
+        loadPosts();
+    }
+
+    async function deleteFile(name) {
+        await fetch("/posts/" + name, { method: "DELETE" });
+        loadPosts();
     }
 
     loadPosts();
-  </script>
+</script>
 </body>
 </html>
