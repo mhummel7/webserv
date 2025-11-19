@@ -208,6 +208,9 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 	printf("path: %s\n", path.c_str());
 	if (isCGIRequest(req.path))
 	{
+		std::string path = config.root + config.cgi_dir + req.path;
+		std::cout << "CGI path: " << path << std::endl;
+		// req.path = path; // pass filesystem path to CGI
 		CGIHandler cgi;
 		return cgi.execute(req);
 	}

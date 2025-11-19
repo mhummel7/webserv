@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/18 12:39:06 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/19 10:20:26 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -261,14 +261,53 @@ int main(int argc, char** argv)
 // ------ aus raw string alles rausgeholt und in Request struct
 // ------ ab hier
 
-                        // Header komplett?
-                        Request req;
-                        if (c.rx.find("\r\n\r\n") != std::string::npos)
+                        // Request wirklich komplett oder chunked??             ---FIX
+                        // Request req;
+                        // if (c.rx.find("\r\n\r\n") != std::string::npos)
+                        // {
+                        //     req = RequestParser().parse(c.rx);
+                        //     std::cout << "Body :" << req.body << ":\n";
+                        //     c.state = RxState::READY; // Für dieses Beispiel direkt READY setzen
+                        //     c.target = req.path;
+                        // }
+
+                        size_t headerEnd = c.rx.find("\r\n\r\n");
+                        if (headerEnd == std::string::npos)
+                            continue; // Header noch nicht komplett, weiter lesen
+                        
+                        std::string headers = c.rx.substr(0, headerEnd + 4);
+                        size_t clPos = headers.find("Content-Length:");
+                        size_t contentLength = 0;
+                        if (clPos != std::string::npos)
                         {
-                            req = RequestParser().parse(c.rx);
-                            c.state = RxState::READY; // Für dieses Beispiel direkt READY setzen
-                            c.target = req.path;
+                            clPos += std::string("Content-Length:").length();
+                            // Whitespace überspringen
+                            while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
+                                ++clPos;
+                            size_t clEnd = headers.find("\r\n", clPos);
+                            std::string clStr = headers.substr(clPos, clEnd - clPos);
+                            contentLength = std::atoi(clStr.c_str());
                         }
+
+                        size_t totalNeeded = headerEnd + 4 + contentLength;
+                        if (c.rx.size() < totalNeeded) {
+                            // Wir haben den kompletten Header, aber noch nicht den ganzen Body
+                            // -> noch nichts parsen, weiter recv() machen
+                            continue;
+                        }
+
+                        std::string fullRequest = c.rx.substr(0, totalNeeded);
+
+                        Request req = RequestParser().parse(fullRequest);
+                        std::cout << "Body :" << req.body << ":\n";
+
+                        c.state = RxState::READY;
+                        c.target = req.path;
+
+                        // Verbrauchte Bytes aus dem Buffer entfernen (wichtig bei keep-alive!)
+                        c.rx.erase(0, totalNeeded);
+
+
 
 // ------ leos part ersetzt bis hier
 
