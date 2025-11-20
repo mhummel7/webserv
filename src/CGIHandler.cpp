@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/20 10:33:33 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/20 10:57:56 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -24,14 +24,14 @@ CGIHandler::~CGIHandler() {}
 Response CGIHandler::execute(const Request& req)
 {
 	Response res;
-	std::string scriptPath = "." + req.path;
-	std::cout << "Executing CGI script: " << scriptPath << std::endl;
+	
+	std::cout << "Executing CGI script: " << req.path << std::endl;
 
 	// baue Umgebungsvariablen
-	std::map<std::string, std::string> env = buildEnv(req, scriptPath);
+	std::map<std::string, std::string> env = buildEnv(req, req.path);
 
 	// führe Script aus
-	std::string output = runCGI(scriptPath, env, req.body);
+	std::string output = runCGI(req.path, env, req.body);
 
 	// baue HTTP-Response
 	res.statusCode = 200;
