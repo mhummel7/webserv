@@ -214,7 +214,7 @@ bool ResponseHandler::fileExists(const std::string& path)
 }
 
 
-void setHeaders(Response& res, const Request& req, const LocationConfig& config)
+void setHeaders(Response& res, const Request& req)
 {
 	res.headers["Server"] = "webserv/1.0";
 	res.headers["Connection"] = req.keep_alive ? "keep-alive" : "close";
@@ -241,7 +241,7 @@ static std::string sanitizeColor(const std::string& raw)
     return s;
 }
 
-// helper: return color cookie value (tries "color", falls nicht vorhanden "bg")
+// helper: return color cookie value
 static std::string cookieColor(const Request& req)
 {
     if (req.cookies.count("color")) return req.cookies.at("color");
@@ -249,7 +249,7 @@ static std::string cookieColor(const Request& req)
     return "";
 }
 
-// Make a simple response with given status and body (keeps Content-Type html by default)
+// response with given status and body (keeps Content-Type html by default)
 Response ResponseHandler::makeHtmlResponse(int status, const std::string& body)
 {
     Response r;
@@ -289,7 +289,7 @@ bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::
 
 // handle static file or CGI. returns true if handled (res filled), false if not found.
 bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsPath,
-                            const LocationConfig& config, Response& res)
+                            Response& res)
 {
     if (!fileExists(fsPath)) return false;
 
@@ -350,7 +350,7 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
     }
 
     // file handling (CGI or static)
-    if (handleFileOrCgi(req, fsPath, config, res)) {
+    if (handleFileOrCgi(req, fsPath, res)) {
         // inject color only for text/html static responses (leave CGI response intact)
         if (res.headers["Content-Type"] == "text/html") {
             size_t pos = res.body.find("<body");
@@ -373,7 +373,6 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
 
 Response& ResponseHandler::methodPOST(const Request& req, Response& res, const LocationConfig& config)
 {
-// Uploads immer relativ zum Location-Root speichern
 	std::string dir = config.root;
 	if (dir.empty())
 		dir = "./root/data/"; // Fallback, sollte eigentlich nicht nötig sein
@@ -516,7 +515,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 	res.keep_alive = req.keep_alive;
 
 	// default headers & cookies
-	setHeaders(res, req, config);
+	setHeaders(res, req);
 	
 	std::string path = config.root + "/" + config.index; // default path
 

@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/20 11:18:04 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/20 11:27:37 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -50,7 +50,7 @@ class ResponseHandler
 		bool handleDirectoryRequest(const std::string& url, const std::string& fsPath,
                                    const LocationConfig& config, Response& res);
 		bool handleFileOrCgi(const Request& req, const std::string& fsPath,
-                            const LocationConfig& config, Response& res);
+                            Response& res);
 
 	};
 
