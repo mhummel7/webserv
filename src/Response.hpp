@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/20 10:07:03 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/20 10:59:56 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -44,6 +44,7 @@ class ResponseHandler
 		std::string readFile(const std::string& path);
 		bool fileExists(const std::string& path);
 		Response& methodGET(const Request& req, Response& res, const LocationConfig& config);
+		Response& methodPOST(const Request& req, Response& res, const LocationConfig& config);
 };
 
 #endif
