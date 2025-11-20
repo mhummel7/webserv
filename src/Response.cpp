@@ -51,13 +51,37 @@ void Response::setCookie(const std::string& name, const std::string& value, cons
 	if (!sameSite.empty()) sc << "; SameSite=" << sameSite; // "Lax"|"Strict"|"None"
 	set_cookies.push_back(sc.str());
 }
+
 static bool isCGIRequest(const std::string& path)
 {
-    size_t dot = path.find_last_of('.');
-    if (dot == std::string::npos)
-        return false;
+    // Arbeitskopie
+    std::string p = path;
+	std::cout << "///////Checking if CGI request for path: " << p << std::endl;
 
-    std::string ext = path.substr(dot + 1);
+    // Entferne CR/LF und führende/trailing whitespace
+    while (!p.empty() && (p.back() == '\r' || p.back() == '\n' || isspace((unsigned char)p.back())))
+        p.pop_back();
+    size_t start = 0;
+    while (start < p.size() && isspace((unsigned char)p[start])) ++start;
+    if (start) p = p.substr(start);
+
+    // Entferne Query-String / Fragment (teile nach ? oder #)
+    size_t q = p.find_first_of("?#");
+    if (q != std::string::npos) p.resize(q);
+
+    // Nimm nur letzten Pfad-Element (falls ein voller Pfad übergeben wurde)
+    size_t lastSlash = p.find_last_of('/');
+    std::string last = (lastSlash == std::string::npos) ? p : p.substr(lastSlash + 1);
+
+    // Finde Extension
+    size_t dot = last.find_last_of('.');
+    if (dot == std::string::npos) return false;
+    std::string ext = last.substr(dot + 1);
+
+    // lowercase
+    std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
+
+	std::cout << "//////CGI extension found: " << ext << std::endl;
     return (ext == "py" || ext == "php" || ext == "cgi");
 }
 
@@ -191,41 +215,53 @@ bool ResponseHandler::fileExists(const std::string& path)
 	return (stat(path.c_str(), &buf) == 0);
 }
 
-Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& config)
+
+void setHeaders(Response& res, const Request& req, const LocationConfig& config)
 {
-	Response res;
-
-	res.keep_alive = req.keep_alive;
-
-	// default headers
 	res.headers["Server"] = "webserv/1.0";
-    // res.headers["Connection"] = "close";
+	res.headers["Connection"] = req.keep_alive ? "keep-alive" : "close";
 	res.headers["Keep-Alive"] = req.keep_alive ? "timeout=5, max=100" : "timeout=0, max=0";
     res.headers["Content-Type"] = "text/html";
 
-	std::string color = "#ffffff"; // Fallback Farbe
-    if (req.cookies.count("color"))
-        color = req.cookies.at("color");
+}
 
-	std::string path = config.root + "/" + config.index; // default path 
-		
-	printf("path: %s\n", path.c_str());
-	if (isCGIRequest(req.path))
-	{
-		std::string path = config.root + config.cgi_dir + req.path;
-		std::cout << "CGI path: " << path << std::endl;
-		// req.path = path; // pass filesystem path to CGI
-		CGIHandler cgi;
-		return cgi.execute(req);
-	}
-	if (req.method == "GET")
-	{
-		// 1) URL-decode und normalize
-		std::string url = urlDecode(req.path);
-		if (url.empty()) url = "/";
-		url = normalizePath(url);
+// sanitize/normalize color cookie value, returns empty string on invalid input
+static std::string sanitizeColor(const std::string& raw)
+{
+    if (raw.empty()) return "";
+    std::string s = raw;
+    // if percent-encoded, decode first
+    s = urlDecode(s);
+    // allow "#rrggbb" or "rrggbb"
+    if (s.size() == 6 && s[0] != '#') s = "#" + s;
+    if (s.size() != 7) return "";
+    for (size_t i = 1; i < s.size(); ++i) {
+        char c = s[i];
+        bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+        if (!ok) return "";
+    }
+    return s;
+}
 
-		if (containsPathTraversal(url)) {
+// helper: return color cookie value (tries "color", falls nicht vorhanden "bg")
+static std::string cookieColor(const Request& req)
+{
+    if (req.cookies.count("color")) return req.cookies.at("color");
+    if (req.cookies.count("bg"))    return req.cookies.at("bg");
+    return "";
+}
+
+Response& ResponseHandler::methodGET(const Request& req, Response& res, const LocationConfig& config)
+{
+    // 1) URL-decode und normalize
+    std::string url = urlDecode(req.path);
+    if (url.empty()) url = "/";
+    url = normalizePath(url);
+
+    // get validated color from cookie
+    std::string color = sanitizeColor(cookieColor(req));
+
+    if (containsPathTraversal(url)) {
 			res.statusCode = 403;
 			res.reasonPhrase = "Forbidden";
 			res.body = "<h1>403 Forbidden</h1>";
@@ -241,14 +277,16 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 		// strip location path prefix if present: assume req.path is the full URL path;
 		// if location.path is not "/", remove prefix
 		std::string trimmedUrl = url;
-		if (!config.path.empty() && config.path != "/" && trimmedUrl.find(config.path) == 0) {
+		if (!config.path.empty() && config.path != "/" && trimmedUrl.find(config.path) == 0)
+		{
 			trimmedUrl = trimmedUrl.substr(config.path.length());
 			if (trimmedUrl.empty()) trimmedUrl = "/";
 		}
 		fsPath = joinPath(fsPath, trimmedUrl);
 
 		// 3) If path is directory -> serve index or autoindex
-		if (isDirectory(fsPath)) {
+		if (isDirectory(fsPath))
+		{
 			// ensure trailing slash in URL behavior handled elsewhere; here we just check
 			std::string indexFile = joinPath(fsPath, config.index.empty() ? "index.html" : config.index);
 			if (fileExists(indexFile))
@@ -286,12 +324,23 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 		}
 
 		// 4) If path is file -> CGI? or static
-		if (fileExists(fsPath)) {
+		std::cout << "CGI request for: " << fsPath << std::endl;
+		if (fileExists(fsPath))
+		{
+			std::cout << " ///// FILE EXISTS ///// " << std::endl;
 			// If CGI extension detected, forward to CGI handler (you may need to pass filesystem path in req)
 			if (isCGIRequest(fsPath))
 			{
+				std::cout << " ///// IN CGI REQUEST ///// " << std::endl;
 				CGIHandler cgi;
-				return cgi.execute(req); // consider setting env/path in req for CGI
+				// pass filesystem path to CGI via a copy of the request
+				Request req_cgi = req;
+				req_cgi.path = fsPath;
+				// execute and copy/move result into 'res' (avoid returning reference to local)
+				res = cgi.execute(req_cgi);
+				// ensure keep-alive follows the original res (or preserve req.keep_alive)
+				res.keep_alive = req.keep_alive;
+				return res;
 			}
 
 			res.statusCode = 200;
@@ -299,14 +348,12 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 			res.body = readFile(fsPath);
 			res.headers["Content-Type"] = getMimeType(fsPath);
 
-			//DEBUG output cookie color value
-			std::cout << "---------------Cookie color: " << color << std::endl;
 			if (res.headers["Content-Type"] == "text/html") {
 				size_t pos = res.body.find("<body");
 				if (pos != std::string::npos) {
 					size_t end = res.body.find(">", pos);
 					if (end != std::string::npos) {
-						std::string insert = " style=\"--user-color: " + color + ";\"";
+						std::string insert = " style=\"--user-color: " + (color.empty() ? std::string("#ffffff") : color) + ";\"";
 						res.body.insert(end, insert);
 					}
 				}
@@ -326,6 +373,24 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 			res.headers["Content-Length"] = std::to_string(res.body.size());
 			return res;
 		}
+}
+
+Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& config)
+{
+	Response res;
+	res.keep_alive = req.keep_alive;
+
+	// default headers & cookies
+	setHeaders(res, req, config);
+	
+	std::string path = config.root + "/" + config.index; // default path
+
+#ifdef DEBUG
+	printf("path: %s\n", path.c_str());
+#endif
+	if (req.method == "GET")
+	{
+		return methodGET(req, res, config);
 	}
 
 	else if (req.method == "POST")
