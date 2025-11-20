@@ -486,6 +486,28 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 	return res;
 }
 
+Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const LocationConfig& config)
+{
+	std::string dir = config.data_dir.empty() ? "./data" : config.data_dir;
+	std::string filepath = "root/" + dir;
+	filepath += "/" + req.body; // assuming the filename to delete is in the body
+	std::cout << "DELETE path: " << filepath << std::endl;
+
+	if (fileExists(filepath) && std::remove(filepath.c_str()) == 0)
+	{
+		res.statusCode = 200;
+		res.reasonPhrase = getStatusMessage(200);
+		res.body = "<h1>File deleted successfully.</h1>";
+	}
+	else
+	{
+		res.statusCode = 404;
+		res.reasonPhrase = getStatusMessage(404);
+		res.body = "<h1>404 File not found.</h1>";
+	}
+	return res;
+}
+
 Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& config)
 {
 	Response res;
@@ -503,31 +525,13 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 	{
 		return methodGET(req, res, config);
 	}
-
 	else if (req.method == "POST")
 	{
 		return methodPOST(req, res, config);
 	}
-
 	else if (req.method == "DELETE")
 	{
-		std::string dir = config.data_dir.empty() ? "./data" : config.data_dir;
-		std::string filepath = "root/" + dir;
-		filepath += "/" + req.body; // assuming the filename to delete is in the body
-		std::cout << "DELETE path: " << filepath << std::endl;
-
-		if (fileExists(filepath) && std::remove(filepath.c_str()) == 0)
-		{
-			res.statusCode = 200;
-			res.reasonPhrase = getStatusMessage(200);
-			res.body = "<h1>File deleted successfully.</h1>";
-		}
-		else
-		{
-			res.statusCode = 404;
-			res.reasonPhrase = getStatusMessage(404);
-			res.body = "<h1>404 File not found.</h1>";
-		}
+		return methodDELETE(req, res, config);
 	}
 	else
 	{
@@ -535,12 +539,15 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 		res.reasonPhrase = getStatusMessage(405);
         res.body = "<h1>405 Method Not Allowed</h1>";
 	}
+
+	res.headers ["Content-Length"] = std::to_string(res.body.size());
+
 	#ifdef DEBUG
 		std::cout << "method : " << req.method << std::endl;
 		std::cout << "path : " << path << std::endl;
 		std::cout << "body : " << req.body << std::endl;
+		std::cout << res.toString() << std::endl;
 	#endif
-	res.headers ["Content-Length"] = std::to_string(res.body.size());
-	std::cout << res.toString() << std::endl;
+	
 	return res;
 }
