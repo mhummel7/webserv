@@ -56,7 +56,6 @@ static bool isCGIRequest(const std::string& path)
 {
     // Arbeitskopie
     std::string p = path;
-	std::cout << "///////Checking if CGI request for path: " << p << std::endl;
 
     // Entferne CR/LF und führende/trailing whitespace
     while (!p.empty() && (p.back() == '\r' || p.back() == '\n' || isspace((unsigned char)p.back())))
@@ -81,7 +80,6 @@ static bool isCGIRequest(const std::string& path)
     // lowercase
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-	std::cout << "//////CGI extension found: " << ext << std::endl;
     return (ext == "py" || ext == "php" || ext == "cgi");
 }
 
@@ -251,128 +249,126 @@ static std::string cookieColor(const Request& req)
     return "";
 }
 
+// Make a simple response with given status and body (keeps Content-Type html by default)
+Response ResponseHandler::makeHtmlResponse(int status, const std::string& body)
+{
+    Response r;
+    r.statusCode = status;
+    r.reasonPhrase = ResponseHandler().getStatusMessage(status);
+    r.body = body;
+    r.headers["Content-Type"] = "text/html";
+    r.headers["Content-Length"] = std::to_string(r.body.size());
+    return r;
+}
+
+// handle directory: index file, autoindex, or forbidden
+bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::string& fsPath,
+                                   const LocationConfig& config, Response& res)
+{
+    std::string indexFile = joinPath(fsPath, config.index.empty() ? "index.html" : config.index);
+    if (fileExists(indexFile)) {
+        res.statusCode = 200;
+        res.reasonPhrase = ResponseHandler().getStatusMessage(200);
+        res.body = readFile(indexFile);
+        res.headers["Content-Type"] = getMimeType(indexFile);
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        return true;
+    }
+    if (config.autoindex) {
+        res.statusCode = 200;
+        res.reasonPhrase = ResponseHandler().getStatusMessage(200);
+        res.body = generateDirectoryListing(fsPath, url);
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        return true;
+    }
+    // index disabled
+    res = makeHtmlResponse(403, "<h1>403 Forbidden</h1><p>Index disabled.</p>");
+    return true;
+}
+
+// handle static file or CGI. returns true if handled (res filled), false if not found.
+bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsPath,
+                            const LocationConfig& config, Response& res)
+{
+    if (!fileExists(fsPath)) return false;
+
+    if (isCGIRequest(fsPath)) {
+        CGIHandler cgi;
+        Request req_cgi = req;
+        req_cgi.path = fsPath; // pass filesystem path to CGI
+        res = cgi.execute(req_cgi);
+        res.keep_alive = req.keep_alive;
+        // ensure Content-Length set by CGI or default
+        if (!res.headers.count("Content-Length")) res.headers["Content-Length"] = std::to_string(res.body.size());
+        return true;
+    }
+
+    // static file
+    res.statusCode = 200;
+    res.reasonPhrase = ResponseHandler().getStatusMessage(200);
+    res.body = readFile(fsPath);
+    res.headers["Content-Type"] = getMimeType(fsPath);
+    res.headers["Content-Length"] = std::to_string(res.body.size());
+    return true;
+}
+
+// extract validated color from req cookies (wrapper of existing helpers)
+static std::string extractValidatedColor(const Request& req)
+{
+    return sanitizeColor(cookieColor(req));
+}
+
 Response& ResponseHandler::methodGET(const Request& req, Response& res, const LocationConfig& config)
 {
-    // 1) URL-decode und normalize
     std::string url = urlDecode(req.path);
     if (url.empty()) url = "/";
     url = normalizePath(url);
 
-    // get validated color from cookie
-    std::string color = sanitizeColor(cookieColor(req));
-
+    // security check
     if (containsPathTraversal(url)) {
-			res.statusCode = 403;
-			res.reasonPhrase = "Forbidden";
-			res.body = "<h1>403 Forbidden</h1>";
-			res.headers["Content-Type"] = "text/html";
-			res.headers["Content-Length"] = std::to_string(res.body.size());
-			return res;
-		}
+        res = makeHtmlResponse(403, "<h1>403 Forbidden</h1>");
+        return res;
+    }
 
-		// 2) Find location root
-		//    Build filesystem path relative to location.root
-		std::string fsPath = config.root;
-		if (fsPath.empty()) fsPath = "."; // fallback
-		// strip location path prefix if present: assume req.path is the full URL path;
-		// if location.path is not "/", remove prefix
-		std::string trimmedUrl = url;
-		if (!config.path.empty() && config.path != "/" && trimmedUrl.find(config.path) == 0)
-		{
-			trimmedUrl = trimmedUrl.substr(config.path.length());
-			if (trimmedUrl.empty()) trimmedUrl = "/";
-		}
-		fsPath = joinPath(fsPath, trimmedUrl);
+    // prepare filesystem path relative to location root
+    std::string fsPath = config.root.empty() ? std::string(".") : config.root;
+    std::string trimmedUrl = url;
+    if (!config.path.empty() && config.path != "/" && trimmedUrl.find(config.path) == 0) {
+        trimmedUrl = trimmedUrl.substr(config.path.length());
+        if (trimmedUrl.empty()) trimmedUrl = "/";
+    }
+    fsPath = joinPath(fsPath, trimmedUrl);
 
-		// 3) If path is directory -> serve index or autoindex
-		if (isDirectory(fsPath))
-		{
-			// ensure trailing slash in URL behavior handled elsewhere; here we just check
-			std::string indexFile = joinPath(fsPath, config.index.empty() ? "index.html" : config.index);
-			if (fileExists(indexFile))
-			{
-				// serve index file
+    // attach user color early so static html can be patched later
+    std::string color = extractValidatedColor(req);
 
-				res.statusCode = 200;
-				res.reasonPhrase = getStatusMessage(200);
-				res.body = readFile(indexFile);
-				res.headers["Content-Type"] = getMimeType(indexFile);
-				res.headers["Content-Length"] = std::to_string(res.body.size());
-				return res;
-			}
-			else if (config.autoindex)
-			{
-				// generate listing
-				std::string urlPrefix = url; // used for links
-				std::string listing = generateDirectoryListing(fsPath, urlPrefix);
-				res.statusCode = 200;
-				res.reasonPhrase = getStatusMessage(200);
-				res.body = listing;
-				res.headers["Content-Type"] = "text/html";
-				res.headers["Content-Length"] = std::to_string(res.body.size());
-				return res;
-			}
-			else
-			{
-				res.statusCode = 403;
-				res.reasonPhrase = "Forbidden";
-				res.body = "<h1>403 Forbidden</h1><p>Index disabled.</p>";
-				res.headers["Content-Type"] = "text/html";
-				res.headers["Content-Length"] = std::to_string(res.body.size());
-				return res;
-			}
-		}
+    // directory handling
+    if (isDirectory(fsPath)) {
+        handleDirectoryRequest(url, fsPath, config, res);
+        return res;
+    }
 
-		// 4) If path is file -> CGI? or static
-		std::cout << "CGI request for: " << fsPath << std::endl;
-		if (fileExists(fsPath))
-		{
-			std::cout << " ///// FILE EXISTS ///// " << std::endl;
-			// If CGI extension detected, forward to CGI handler (you may need to pass filesystem path in req)
-			if (isCGIRequest(fsPath))
-			{
-				std::cout << " ///// IN CGI REQUEST ///// " << std::endl;
-				CGIHandler cgi;
-				// pass filesystem path to CGI via a copy of the request
-				Request req_cgi = req;
-				req_cgi.path = fsPath;
-				// execute and copy/move result into 'res' (avoid returning reference to local)
-				res = cgi.execute(req_cgi);
-				// ensure keep-alive follows the original res (or preserve req.keep_alive)
-				res.keep_alive = req.keep_alive;
-				return res;
-			}
+    // file handling (CGI or static)
+    if (handleFileOrCgi(req, fsPath, config, res)) {
+        // inject color only for text/html static responses (leave CGI response intact)
+        if (res.headers["Content-Type"] == "text/html") {
+            size_t pos = res.body.find("<body");
+            if (pos != std::string::npos) {
+                size_t end = res.body.find(">", pos);
+                if (end != std::string::npos) {
+                    std::string insert = " style=\"--user-color: " + (color.empty() ? std::string("#ffffff") : color) + ";\"";
+                    res.body.insert(end, insert);
+                    res.headers["Content-Length"] = std::to_string(res.body.size());
+                }
+            }
+        }
+        return res;
+    }
 
-			res.statusCode = 200;
-			res.reasonPhrase = getStatusMessage(200);
-			res.body = readFile(fsPath);
-			res.headers["Content-Type"] = getMimeType(fsPath);
-
-			if (res.headers["Content-Type"] == "text/html") {
-				size_t pos = res.body.find("<body");
-				if (pos != std::string::npos) {
-					size_t end = res.body.find(">", pos);
-					if (end != std::string::npos) {
-						std::string insert = " style=\"--user-color: " + (color.empty() ? std::string("#ffffff") : color) + ";\"";
-						res.body.insert(end, insert);
-					}
-				}
-			}
-
-			res.headers["Content-Length"] = std::to_string(res.body.size());
-			return res;
-
-		}
-		else
-		{
-			// Not found
-			res.statusCode = 404;
-			res.reasonPhrase = getStatusMessage(404);
-			res.body = "<h1>404 Not Found</h1>";
-			res.headers["Content-Type"] = "text/html";
-			res.headers["Content-Length"] = std::to_string(res.body.size());
-			return res;
-		}
+    // not found
+    res = makeHtmlResponse(404, "<h1>404 Not Found</h1>");
+    return res;
 }
 
 Response& ResponseHandler::methodPOST(const Request& req, Response& res, const LocationConfig& config)
@@ -381,7 +377,10 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 	std::string dir = config.root;
 	if (dir.empty())
 		dir = "./root/data/"; // Fallback, sollte eigentlich nicht nötig sein
+
+#ifdef DEBUG
 	std::cout << "POST data dir: " << dir << std::endl;
+#endif
 	std::string contentType;
 	if (req.headers.count("Content-Type"))
 		contentType = req.headers.find("Content-Type")->second;
@@ -491,7 +490,10 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
 	std::string dir = config.data_dir.empty() ? "./data" : config.data_dir;
 	std::string filepath = "root/" + dir;
 	filepath += "/" + req.body; // assuming the filename to delete is in the body
+
+	#ifdef DEBUG
 	std::cout << "DELETE path: " << filepath << std::endl;
+	#endif
 
 	if (fileExists(filepath) && std::remove(filepath.c_str()) == 0)
 	{
@@ -542,12 +544,12 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
 	res.headers ["Content-Length"] = std::to_string(res.body.size());
 
-	#ifdef DEBUG
+#ifdef DEBUG
 		std::cout << "method : " << req.method << std::endl;
 		std::cout << "path : " << path << std::endl;
 		std::cout << "body : " << req.body << std::endl;
 		std::cout << res.toString() << std::endl;
-	#endif
-	
+#endif
+
 	return res;
 }
