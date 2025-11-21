@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 11:14:30 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 11:33:26 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -27,22 +27,6 @@ int make_nonblocking(int fd)
     int flags = fcntl(fd, F_GETFL, 0);
     return fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 }
-
-static void send_error_and_close(size_t i, int code, const std::string& text,
-                                 std::vector<pollfd>& fds, std::vector<Client>& clients)
-{
-    Client& c = clients[i];
-    std::string body = std::to_string(code) + " " + text + "\n";
-    c.tx = "HTTP/1.1 " + std::to_string(code) + " " + text + "\r\n"
-           "Content-Type: text/plain\r\n"
-           "Content-Length: " + std::to_string(body.size()) + "\r\n"
-           "Connection: close\r\n\r\n" + body;
-    fds[i].events |= POLLOUT;
-}
-
-inline void err400(size_t i, std::vector<pollfd>& fds, std::vector<Client>& clients){ send_error_and_close(i,400,"Bad Request",fds,clients); }
-inline void err413(size_t i, std::vector<pollfd>& fds, std::vector<Client>& clients){ send_error_and_close(i,413,"Payload Too Large",fds,clients); }
-inline void err505(size_t i, std::vector<pollfd>& fds, std::vector<Client>& clients){ send_error_and_close(i,505,"HTTP Version Not Supported",fds,clients); }
 
 static void reset_for_next_request(Client& c)
 {
@@ -71,13 +55,31 @@ static int add_listener(uint16_t port)
     a.sin_addr.s_addr = htonl(INADDR_ANY);
     a.sin_port        = htons(port);
 
-    if (::bind(s, (sockaddr*)&a, sizeof(a)) < 0) { perror("bind"); ::close(s); return -1; }
-    if (::listen(s, 128) < 0)                     { perror("listen"); ::close(s); return -1; }
-    if (make_nonblocking(s) < 0)                  { perror("fcntl");  ::close(s); return -1; }
+    if (::bind(s, (sockaddr*)&a, sizeof(a)) < 0)
+    {
+        perror("bind");
+        ::close(s);
+        return -1;
+    }
+
+    if (::listen(s, 128) < 0)
+    {
+        perror("listen");
+        ::close(s);
+        return -1;
+    }
+
+    if (make_nonblocking(s) < 0)
+    {
+        perror("fcntl");
+        ::close(s);
+        return -1;
+    }
 
     pollfd p{}; p.fd = s; p.events = POLLIN; p.revents = 0;
-    //fds debug print
-    // std::cout << "Added listener fd=" << s << " on port " << port << "\n";
+    #ifdef DEBUG
+    std::cout << "Added listener fd=" << s << " on port " << port << "\n";
+    #endif
     fds.push_back(p);
     clients.push_back(Client{}); // Dummy, hält Index-Sync
     listener_fds.insert(s);
@@ -146,7 +148,9 @@ void Server::setupListeners()
             int lfd = add_listener(port);
             lfd_by_port[port] = lfd;
             port_by_listener_fd[lfd] = port;
+            #ifdef DEBUG
             std::cout << "Listening on *:" << port << " (lfd=" << lfd << ")\n";
+            #endif
         }
         servers_by_port[port].push_back(s);
     }
@@ -176,9 +180,38 @@ void Server::handleTimeouts(long now_ms, long IDLE_MS)
 
 void Server::handleListenerEvent(size_t index, long now_ms)
 {
+    int fd = fds[index].fd;
     
-}
+    for (;;)
+    {
+        int cfd = accept(fd, NULL, NULL);
+        if (cfd < 0)
+        {
+            if (errno==EAGAIN || errno==EWOULDBLOCK) break;
+            perror("accept"); break;
+        }
+        make_nonblocking(cfd);
+        pollfd cp{}; cp.fd = cfd; cp.events = POLLIN; cp.revents = 0;
+        fds.push_back(cp);
 
+        Client c;
+        c.last_active_ms = now_ms;
+
+
+        int port = port_by_listener_fd[fd];
+        c.listen_port = port;
+
+        // Default-Server (falls mehrere vHosts auf gleichem Port – später durch Host-Header präzisieren)
+        c.server_idx = servers_by_port[port].front();
+
+        // Body-Limit erstmal mit Server-Default belegen (wird nach Host-Match evtl. noch aktualisiert)
+        const ServerConfig& sc0 = g_cfg.servers[c.server_idx];
+        c.max_body_bytes = sc0.client_max_body_size;
+        clients.push_back(c);
+
+        std::cout << "New client " << cfd << " via port " << port << " -> server#" << c.server_idx << "\n";
+    }
+}
 
 void Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
 {
@@ -219,15 +252,16 @@ void Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             size_t totalNeeded = headerEnd + 4 + contentLength;
             if (c.rx.size() < totalNeeded)
             {
-                // Wir haben den kompletten Header, aber noch nicht den ganzen Body
-                // -> noch nichts parsen, weiter recv() machen
+                // noch nicht den ganzen Body -> noch nichts parsen, weiter recv() machen
                 continue;
             }
 
             std::string fullRequest = c.rx.substr(0, totalNeeded);
 
             Request req = RequestParser().parse(fullRequest);
+            #ifdef DEBUG
             std::cout << "Body :" << req.body << ":\n";
+            #endif
 
             c.state = RxState::READY;
             c.target = req.path;
@@ -258,7 +292,9 @@ void Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             };
 
             const LocationConfig& lc = resolve_location(sc, c.target);
+            #ifdef DEBUG
             std::cout << "lc root " << lc.root << std::endl;
+            #endif
             c.last_active_ms = now_ms;
 
             if (c.state == RxState::READY && c.tx.empty())
@@ -266,9 +302,10 @@ void Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 req.conn_fd   = fds[i].fd;
 
                 ResponseHandler handler;
-                printf("method: %s, path: %s\n", req.method.c_str(), req.path.c_str());
+                #ifdef DEBUG
+                std::cout << "method: " << req.method << ", path: " << req.path << std::endl;
+                #endif
                 Response res = handler.handleRequest(req, lc);
-                //CoreResponse resp =  RequestParser.parse(req); // <- später echtes Modul deines Kumpels
 
                 c.keep_alive = res.keep_alive; // Server-Core entscheidet final über close/keep-alive
                 c.tx         = res.toString();
@@ -288,30 +325,73 @@ void Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
     }
 }
 
+void Server::handleClientWrite(size_t &i, long now_ms)
+{
+    Client &c = clients[i];
+    while (!c.tx.empty())
+    {
+        ssize_t m = write(fds[i].fd, c.tx.data(), c.tx.size());
+        if (m > 0)
+        {
+            c.tx.erase(0, m);
+            c.last_active_ms = now_ms;
+            continue;
+        }
+        if (m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+            break;
+        if (m < 0)
+        {
+            perror("write");
+            break;
+        }
+    }
+    if (c.tx.empty())
+    {
+        if (c.keep_alive)
+        {
+            reset_for_next_request(c);
+            fds[i].events &= ~POLLOUT;          // zurück auf nur lesen
+            // Verbindung offen lassen
+        }
+        else
+            closeClient(i);
+    }
+}
+
 
 int Server::run(int argc, char* argv[])
 {
     loadConfig(argc, argv);
 
     // === 3. DEFAULTS FÜR ALLE SERVER/LOCATIONS SETZEN ===
-    for (auto& server : g_cfg.servers) {
-        if (server.listen_port == 0) server.listen_port = 80;
-        if (server.client_max_body_size == 0) server.client_max_body_size = 1048576;
-        if (server.error_pages.empty()) server.error_pages = g_cfg.default_error_pages;
+    for (auto& server : g_cfg.servers)
+    {
+        if (server.listen_port == 0)
+            server.listen_port = 80;
+        if (server.client_max_body_size == 0)
+            server.client_max_body_size = 1048576;
+        if (server.error_pages.empty())
+            server.error_pages = g_cfg.default_error_pages;
 
         for (auto& loc : server.locations) {
-            if (loc.index.empty()) loc.index = "index.html";
-            if (loc.methods.empty()) loc.methods = {"GET", "POST", "DELETE"};
-            if (loc.error_pages.empty()) loc.error_pages = server.error_pages;
-            if (!loc.autoindex) loc.autoindex = false;
+            if (loc.index.empty())
+                loc.index = "index.html";
+            if (loc.methods.empty())
+                loc.methods = {"GET", "POST", "DELETE"};
+            if (loc.error_pages.empty())
+                loc.error_pages = server.error_pages;
+            if (!loc.autoindex)
+                loc.autoindex = false;
         }
     }
 
     setupListeners();
 
-    const long IDLE_MS = 1500000; // timeout zeit
+    const long IDLE_MS = 150000; // timeout zeit
     char buf[4096];
+    #ifdef DEBUG
     std::cout << "Echo server with write-buffer on port 8080...\n";
+    #endif
 
     for (;;)
 	{
@@ -324,96 +404,48 @@ int Server::run(int argc, char* argv[])
 
         //poll
         int ready = poll(&fds[0], fds.size(), 1000);
-        if (ready < 0) { if (errno==EINTR) continue; perror("poll"); break; }
-
+        if (ready < 0)
+        {
+            if (errno==EINTR) 
+                continue;
+            perror("poll");
+            break;
+        }
+        
+        //Events abarbeiten
         for (size_t i = 0; i < fds.size(); ++i)
 		{
-            if (fds[i].revents == 0) continue;
+            if (fds[i].revents == 0)
+                continue;
 
             int fd = fds[i].fd;
             bool is_listener = (listener_fds.find(fd) != listener_fds.end());
 
             if (is_listener)
 			{
-                for (;;)
-				{
-                    int cfd = accept(fd, NULL, NULL);
-                    if (cfd < 0)
-					{
-                        if (errno==EAGAIN || errno==EWOULDBLOCK) break;
-                        perror("accept"); break;
-                    }
-                    make_nonblocking(cfd);
-                    pollfd cp{}; cp.fd = cfd; cp.events = POLLIN; cp.revents = 0;
-                    fds.push_back(cp);
-
-                    Client c;
-                    c.last_active_ms = now_ms;
-
-
-                   int port = port_by_listener_fd[fd];
-                    c.listen_port = port;
-
-                    // Default-Server (falls mehrere vHosts auf gleichem Port – später durch Host-Header präzisieren)
-                    c.server_idx = servers_by_port[port].front();
-
-                    // Body-Limit erstmal mit Server-Default belegen (wird nach Host-Match evtl. noch aktualisiert)
-                    const ServerConfig& sc0 = g_cfg.servers[c.server_idx];
-                    c.max_body_bytes = sc0.client_max_body_size;
-                    clients.push_back(c);
-
-                    std::cout << "New client " << cfd << " via port " << port
-                              << " -> server#" << c.server_idx << "\n";
-                }
+                handleListenerEvent(i, now_ms);
                 continue;
             }
 
             if (fds[i].revents & (POLLHUP | POLLERR | POLLNVAL))
 			{
-                close(fds[i].fd);
-                fds.erase(fds.begin() + i);
-                clients.erase(clients.begin() + i);
-                --i;
+                closeClient(i);
                 continue;
             }
-
             // Lesen
             if (fds[i].revents & POLLIN)
             {
                 handleClientRead(i, now_ms, buf, sizeof(buf));
             }
-
             // Schreiben
             if (fds[i].revents & POLLOUT)
 			{
-                Client &c = clients[i];
-                while (!c.tx.empty())
-				{
-                    ssize_t m = write(fds[i].fd, c.tx.data(), c.tx.size());
-                    if (m > 0) { c.tx.erase(0, m); c.last_active_ms = now_ms; continue; }
-                    if (m < 0 && (errno==EAGAIN || errno==EWOULDBLOCK)) break;
-                    if (m < 0) { perror("write"); break; }
-                }
-                if (c.tx.empty())
-				{
-                    if (c.keep_alive)
-					{
-                        reset_for_next_request(c);
-                        fds[i].events &= ~POLLOUT;          // zurück auf nur lesen
-                        // Verbindung offen lassen
-                    }
-					else
-					{
-                        ::close(fds[i].fd);
-                        fds.erase(fds.begin()+i);
-                        clients.erase(clients.begin()+i);
-                        --i;
-                    }
-                }
+                handleClientWrite(i, now_ms);
             }
         }
     }
 
-    for (auto &p : fds) ::close(p.fd);
+    for (auto &p : fds)
+        ::close(p.fd);
     return 0;
 }
