@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 10:27:50 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 10:51:08 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -87,21 +87,13 @@ static int add_listener(uint16_t port)
 }
 
 
-int webserv(int argc, char** argv)
+int webserv(int argc, char* argv[])
 {
     Server server;
     return server.run(argc, argv);
 }
 
-
-
-
-
-
-
-
-
-int Server::run(int argc, char* argv[])
+void Server::loadConfig(int argc, char* argv[])
 {
     // === 1. AUTOMATISCHER CONFIG-PFAD ===
     const char* cfg_path = "./config/webserv.conf";
@@ -110,10 +102,13 @@ int Server::run(int argc, char* argv[])
     }
 
     // === 2. CONFIG LADEN MIT FALLBACK ===
-    try {
+    try
+    {
         g_cfg.parse_c(cfg_path);
         std::cout << "Config geladen: " << cfg_path << "\n";
-    } catch (const std::exception& e) {
+    } 
+    catch (const std::exception& e)
+    {
         std::cerr << "Config-Fehler (" << cfg_path << "): " << e.what() << "\n";
         std::cerr << "→ Starte mit Default-Server auf 127.0.0.1:8080\n";
 
@@ -134,6 +129,14 @@ int Server::run(int argc, char* argv[])
         defaultServer.locations.push_back(defaultLoc);
         g_cfg.servers.push_back(defaultServer);
     }
+}
+
+
+
+
+int Server::run(int argc, char* argv[])
+{
+    loadConfig(argc, argv);
 
     // === 3. DEFAULTS FÜR ALLE SERVER/LOCATIONS SETZEN ===
     for (auto& server : g_cfg.servers) {

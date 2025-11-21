@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:38 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 10:23:38 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 10:48:30 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -82,11 +82,15 @@ struct HeadInfo
     size_t content_length = 0;
 };
 
-class Server {
-public:
-    int run(int argc, char** argv);
+class Server
+{
+    public:
+        int run(int argc, char* argv[]);
+
+    private:
+        void loadConfig(int argc, char* argv[]);
 };
 
-int webserv(int argc, char** argv);
+int webserv(int argc, char* argv[]);
 
 #endif
