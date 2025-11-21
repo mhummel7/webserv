@@ -33,3 +33,8 @@ Farbe und uhrzeit (sript?)
 
 
 leoleoleo anschauen
+➜  webserv git:(main) ./webserv co
+Config-Fehler (co): Cannot open config file: co
+→ Starte mit Default-Server auf 127.0.0.1:8080
+Listening on 0.0.0.0:8080
+==> config auslesen geht nicht richtig -> post funktioniert nd
