@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:38 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/17 10:23:24 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 10:23:38 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -31,7 +31,7 @@
 #include <unistd.h>
 #include <unordered_map>
 #include <sstream>
-// #include "http_bridge.hpp" //file kann man loeschen und die anderen .hpp in include rein
+
 #include "HTTPHandler.hpp"
 #include "Response.hpp"
 #include "config.hpp"
@@ -51,7 +51,7 @@ struct Client
     size_t body_rcvd    = 0;     // gezählt (für CL und dechunk)
 
     // Limits (später aus Config)
-    size_t max_header_bytes = 16 * 1024;     // 16KB
+    size_t max_header_bytes = 16 * 1024;       // 16KB
     size_t max_body_bytes   = 1 * 1024 * 1024; // 1MB
 
     // Timeout
@@ -84,7 +84,9 @@ struct HeadInfo
 
 class Server {
 public:
-	void run();
+    int run(int argc, char** argv);
 };
+
+int webserv(int argc, char** argv);
 
 #endif
