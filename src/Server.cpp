@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 11:33:26 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 11:48:00 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -182,7 +182,7 @@ void Server::handleListenerEvent(size_t index, long now_ms)
 {
     int fd = fds[index].fd;
     
-    for (;;)
+    while (1)
     {
         int cfd = accept(fd, NULL, NULL);
         if (cfd < 0)
@@ -213,10 +213,10 @@ void Server::handleListenerEvent(size_t index, long now_ms)
     }
 }
 
-void Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
+void Server::handleClientRead(size_t &i, long now_ms, char* buf)
 {
     // Lesen
-    for (;;)
+    while (1)
     {
         ssize_t n = ::read(fds[i].fd, buf, sizeof(buf));
         #ifdef DEBUG
@@ -393,7 +393,7 @@ int Server::run(int argc, char* argv[])
     std::cout << "Echo server with write-buffer on port 8080...\n";
     #endif
 
-    for (;;)
+    while (1)
 	{
         // zeit setup
         using clock_t = std::chrono::steady_clock;
@@ -435,7 +435,7 @@ int Server::run(int argc, char* argv[])
             // Lesen
             if (fds[i].revents & POLLIN)
             {
-                handleClientRead(i, now_ms, buf, sizeof(buf));
+                handleClientRead(i, now_ms, buf);
             }
             // Schreiben
             if (fds[i].revents & POLLOUT)

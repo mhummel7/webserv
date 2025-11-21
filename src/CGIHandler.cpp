@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/20 10:57:56 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/21 11:57:38 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -125,7 +125,11 @@ std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std
 
 		// schreibe Request-Body an CGI
 		if (!body.empty())
-			write(pipeIn[1], body.c_str(), body.size());
+		{
+			ssize_t written = write(pipeIn[1], body.c_str(), body.size()); //leoleoleo
+			if (written < 0)
+				perror("write to CGI stdin");
+		}
 		close(pipeIn[1]);
 
 		// lese Ausgabe vom CGI

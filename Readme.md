@@ -30,3 +30,6 @@ FRONTEND
 BACKGROUND FARBEN ANPASSEN
 Kaesten gleich gros machen
 Farbe und uhrzeit (sript?)
+
+
+leoleoleo anschauen

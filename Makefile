@@ -1,6 +1,6 @@
 
 CXX     := g++
-CXXFLAGS := -std=c++17  -O2 -Iinclude
+CXXFLAGS := -std=c++17 -Wall -Werror -Wextra -O2 -Iinclude
 
 DBGFLAGS := -g -O0
 
@@ -9,6 +9,7 @@ NAME := webserv
 SRC_DIR := src
 OBJ_DIR := obj
 
+#muss noch raus
 SRCS := $(shell find $(SRC_DIR) -name '*.cpp')
 OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
