@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/19 10:24:58 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/21 10:27:50 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -87,6 +87,11 @@ static int add_listener(uint16_t port)
 }
 
 
+int webserv(int argc, char** argv)
+{
+    Server server;
+    return server.run(argc, argv);
+}
 
 
 
@@ -96,8 +101,7 @@ static int add_listener(uint16_t port)
 
 
 
-
-int main(int argc, char** argv)
+int Server::run(int argc, char* argv[])
 {
     // === 1. AUTOMATISCHER CONFIG-PFAD ===
     const char* cfg_path = "./config/webserv.conf";
