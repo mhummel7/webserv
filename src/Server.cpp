@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 10:51:08 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 11:14:30 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -131,7 +131,162 @@ void Server::loadConfig(int argc, char* argv[])
     }
 }
 
+void Server::setupListeners()
+{
+    // === 4. LISTENER AUS CONFIG STARTEN ===
+    std::unordered_map<int, int> lfd_by_port;
 
+    for (size_t s = 0; s < g_cfg.servers.size(); ++s)
+    {
+        const ServerConfig& sc = g_cfg.servers[s];
+        int port = sc.listen_port;
+
+        if (lfd_by_port.find(port) == lfd_by_port.end())
+        {
+            int lfd = add_listener(port);
+            lfd_by_port[port] = lfd;
+            port_by_listener_fd[lfd] = port;
+            std::cout << "Listening on *:" << port << " (lfd=" << lfd << ")\n";
+        }
+        servers_by_port[port].push_back(s);
+    }
+}
+
+void Server::closeClient(size_t &i)
+{
+    ::close(fds[i].fd);
+    fds.erase(fds.begin() + i);
+    clients.erase(clients.begin() + i);
+    --i;
+}
+
+void Server::handleTimeouts(long now_ms, long IDLE_MS)
+{
+    for (size_t i = 1; i < fds.size(); ++i)
+    {
+            if (listener_fds.count(fds[i].fd)) continue;
+            if (now_ms - clients[i].last_active_ms > IDLE_MS)
+            {
+                std::cerr << "[TIMEOUT] fd=" << fds[i].fd
+                        << " idle=" << (now_ms - clients[i].last_active_ms) << "ms\n";
+                closeClient(i);
+            }
+        }
+}
+
+void Server::handleListenerEvent(size_t index, long now_ms)
+{
+    
+}
+
+
+void Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
+{
+    // Lesen
+    for (;;)
+    {
+        ssize_t n = ::read(fds[i].fd, buf, sizeof(buf));
+        #ifdef DEBUG
+        std::cout << "========= Read returned buf=" << buf << " =========" << std::endl;
+        #endif
+        if (n > 0)
+        {
+            Client &c = clients[i];
+            c.last_active_ms = now_ms;
+            c.rx.append(buf, n);
+            #ifdef DEBUG
+            std::cout << "----- c.rx " <<c.rx << " -----" << std::endl;
+            #endif
+
+            size_t headerEnd = c.rx.find("\r\n\r\n");
+            if (headerEnd == std::string::npos)
+                continue; // Header noch nicht komplett, weiter lesen
+
+            std::string headers = c.rx.substr(0, headerEnd + 4);
+            size_t clPos = headers.find("Content-Length:");
+            size_t contentLength = 0;
+            if (clPos != std::string::npos)
+            {
+                clPos += std::string("Content-Length:").length();
+                // Whitespace überspringen
+                while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
+                    ++clPos;
+                size_t clEnd = headers.find("\r\n", clPos);
+                std::string clStr = headers.substr(clPos, clEnd - clPos);
+                contentLength = std::atoi(clStr.c_str());
+            }
+
+            size_t totalNeeded = headerEnd + 4 + contentLength;
+            if (c.rx.size() < totalNeeded)
+            {
+                // Wir haben den kompletten Header, aber noch nicht den ganzen Body
+                // -> noch nichts parsen, weiter recv() machen
+                continue;
+            }
+
+            std::string fullRequest = c.rx.substr(0, totalNeeded);
+
+            Request req = RequestParser().parse(fullRequest);
+            std::cout << "Body :" << req.body << ":\n";
+
+            c.state = RxState::READY;
+            c.target = req.path;
+
+            // Verbrauchte Bytes aus dem Buffer entfernen (wichtig bei keep-alive!)
+            c.rx.erase(0, totalNeeded);
+
+            // Limits an finalen Server anpassen (z. B. 413 später korrekt)
+            const ServerConfig& sc = g_cfg.servers[c.server_idx];
+            c.max_body_bytes = sc.client_max_body_size;
+
+            // ---- Location bestimmen (Longest Prefix Match) ----
+            auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
+            {
+                size_t best = 0, best_len = 0;
+                for (size_t i = 0; i < sc.locations.size(); ++i) {
+                    const std::string& p = sc.locations[i].path;
+                    if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len) {
+                        best = i; best_len = p.size();
+                    }
+                }
+                if (best_len == 0) {
+                    for (size_t i = 0; i < sc.locations.size(); ++i)
+                        if (sc.locations[i].path == "/") return sc.locations[i];
+                    return sc.locations.front();
+                }
+                return sc.locations[best];
+            };
+
+            const LocationConfig& lc = resolve_location(sc, c.target);
+            std::cout << "lc root " << lc.root << std::endl;
+            c.last_active_ms = now_ms;
+
+            if (c.state == RxState::READY && c.tx.empty())
+            {
+                req.conn_fd   = fds[i].fd;
+
+                ResponseHandler handler;
+                printf("method: %s, path: %s\n", req.method.c_str(), req.path.c_str());
+                Response res = handler.handleRequest(req, lc);
+                //CoreResponse resp =  RequestParser.parse(req); // <- später echtes Modul deines Kumpels
+
+                c.keep_alive = res.keep_alive; // Server-Core entscheidet final über close/keep-alive
+                c.tx         = res.toString();
+                fds[i].events |= POLLOUT;
+            }
+            
+            continue; // weiter lesen, falls Kernel noch mehr hat
+        }
+        else if (n == 0)
+            closeClient(i);
+        else
+        {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) break;
+            perror("read");
+            closeClient(i);
+        }
+    }
+}
 
 
 int Server::run(int argc, char* argv[])
@@ -152,23 +307,7 @@ int Server::run(int argc, char* argv[])
         }
     }
 
-    // === 4. LISTENER AUS CONFIG STARTEN ===
-    std::unordered_map<int, int> lfd_by_port;
-
-    for (size_t s = 0; s < g_cfg.servers.size(); ++s)
-    {
-        const ServerConfig& sc = g_cfg.servers[s];
-        int port = sc.listen_port;
-
-        if (lfd_by_port.find(port) == lfd_by_port.end())
-        {
-            int lfd = add_listener(port);
-            lfd_by_port[port] = lfd;
-            port_by_listener_fd[lfd] = port;
-            std::cout << "Listening on *:" << port << " (lfd=" << lfd << ")\n";
-        }
-        servers_by_port[port].push_back(s);
-    }
+    setupListeners();
 
     const long IDLE_MS = 1500000; // timeout zeit
     char buf[4096];
@@ -181,17 +320,7 @@ int Server::run(int argc, char* argv[])
         using ms      = std::chrono::milliseconds;
 
         long now_ms = std::chrono::duration_cast<ms>(clock_t::now().time_since_epoch()).count();
-        for (size_t i = 1; i < fds.size(); ++i) {
-            if (listener_fds.count(fds[i].fd)) continue;
-            if (now_ms - clients[i].last_active_ms > IDLE_MS) {
-                std::cerr << "[TIMEOUT] fd=" << fds[i].fd
-                        << " idle=" << (now_ms - clients[i].last_active_ms) << "ms\n";
-                ::close(fds[i].fd);
-                fds.erase(fds.begin()+i);
-                clients.erase(clients.begin()+i);
-                --i;
-            }
-        }
+        handleTimeouts(now_ms, IDLE_MS);
 
         //poll
         int ready = poll(&fds[0], fds.size(), 1000);
@@ -250,137 +379,8 @@ int Server::run(int argc, char* argv[])
 
             // Lesen
             if (fds[i].revents & POLLIN)
-			{
-                for (;;)
-				{
-                    ssize_t n = ::read(fds[i].fd, buf, sizeof(buf));
-                    //DEBUG read check
-                    // std::cout << "========= Read returned buf=" << buf << " =========" << std::endl;
-                    if (n > 0)
-					{
-                        Client &c = clients[i];
-                        c.last_active_ms = now_ms;
-                        c.rx.append(buf, n);
-                        //DEBG c.rx
-                        // std::cout << "----- c.rx " <<c.rx << " -----" << std::endl;
-
-// ------ hier Leo sein Zeug rein
-// ------ aus raw string alles rausgeholt und in Request struct
-// ------ ab hier
-
-                        // Request wirklich komplett oder chunked??             ---FIX
-                        // Request req;
-                        // if (c.rx.find("\r\n\r\n") != std::string::npos)
-                        // {
-                        //     req = RequestParser().parse(c.rx);
-                        //     std::cout << "Body :" << req.body << ":\n";
-                        //     c.state = RxState::READY; // Für dieses Beispiel direkt READY setzen
-                        //     c.target = req.path;
-                        // }
-
-                        size_t headerEnd = c.rx.find("\r\n\r\n");
-                        if (headerEnd == std::string::npos)
-                            continue; // Header noch nicht komplett, weiter lesen
-
-                        std::string headers = c.rx.substr(0, headerEnd + 4);
-                        size_t clPos = headers.find("Content-Length:");
-                        size_t contentLength = 0;
-                        if (clPos != std::string::npos)
-                        {
-                            clPos += std::string("Content-Length:").length();
-                            // Whitespace überspringen
-                            while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
-                                ++clPos;
-                            size_t clEnd = headers.find("\r\n", clPos);
-                            std::string clStr = headers.substr(clPos, clEnd - clPos);
-                            contentLength = std::atoi(clStr.c_str());
-                        }
-
-                        size_t totalNeeded = headerEnd + 4 + contentLength;
-                        if (c.rx.size() < totalNeeded) {
-                            // Wir haben den kompletten Header, aber noch nicht den ganzen Body
-                            // -> noch nichts parsen, weiter recv() machen
-                            continue;
-                        }
-
-                        std::string fullRequest = c.rx.substr(0, totalNeeded);
-
-                        Request req = RequestParser().parse(fullRequest);
-                        std::cout << "Body :" << req.body << ":\n";
-
-                        c.state = RxState::READY;
-                        c.target = req.path;
-
-                        // Verbrauchte Bytes aus dem Buffer entfernen (wichtig bei keep-alive!)
-                        c.rx.erase(0, totalNeeded);
-
-
-
-// ------ leos part ersetzt bis hier
-
-
-                        // Limits an finalen Server anpassen (z. B. 413 später korrekt)
-                        const ServerConfig& sc = g_cfg.servers[c.server_idx];
-                        c.max_body_bytes = sc.client_max_body_size;
-
-                        // ---- Location bestimmen (Longest Prefix Match) ----
-                        auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
-						{
-                            size_t best = 0, best_len = 0;
-                            for (size_t i = 0; i < sc.locations.size(); ++i) {
-                                const std::string& p = sc.locations[i].path;
-                                if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len) {
-                                    best = i; best_len = p.size();
-                                }
-                            }
-                            if (best_len == 0) {
-                                for (size_t i = 0; i < sc.locations.size(); ++i)
-                                    if (sc.locations[i].path == "/") return sc.locations[i];
-                                return sc.locations.front();
-                            }
-                            return sc.locations[best];
-                        };
-
-                        const LocationConfig& lc = resolve_location(sc, c.target);
-                        std::cout << "lc root " << lc.root << std::endl;
-                        c.last_active_ms = now_ms;
-
-                        if (c.state == RxState::READY && c.tx.empty())
-                        {
-                            req.conn_fd   = fds[i].fd;
-
-                            ResponseHandler handler;
-                            printf("method: %s, path: %s\n", req.method.c_str(), req.path.c_str());
-                            Response res = handler.handleRequest(req, lc);
-                            //CoreResponse resp =  RequestParser.parse(req); // <- später echtes Modul deines Kumpels
-
-                            c.keep_alive = res.keep_alive; // Server-Core entscheidet final über close/keep-alive
-                            c.tx         = res.toString();
-                            fds[i].events |= POLLOUT;
-                        }
-
-
-// alles mehr oder weniger leo
-
-                        continue; // weiter lesen, falls Kernel noch mehr hat
-                    }
-					else if (n == 0)
-					{
-                        ::close(fds[i].fd);
-                        fds.erase(fds.begin()+i);
-                        clients.erase(clients.begin()+i);
-                        --i; break;
-                    }
-					else
-					{
-                        if (errno == EAGAIN || errno == EWOULDBLOCK) break;
-                        perror("read");
-                        ::close(fds[i].fd);
-                        fds.erase(fds.begin()+i);
-                        clients.erase(clients.begin()+i);
-                        --i; break;
-                    }
-                }
+            {
+                handleClientRead(i, now_ms, buf, sizeof(buf));
             }
 
             // Schreiben

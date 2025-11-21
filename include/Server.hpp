@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:38 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 10:48:30 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 11:04:14 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -89,6 +89,14 @@ class Server
 
     private:
         void loadConfig(int argc, char* argv[]);
+        void setupListeners();
+
+        //poll stuff
+        void handleTimeouts(long now_ms, long idle_ms);
+        void handleListenerEvent(size_t index, long now_ms);
+        void handleClientRead(size_t &index, long now_ms, char* buf, size_t buf_size);
+        void handleClientWrite(size_t &index, long now_ms);
+        void closeClient(size_t &index);
 };
 
 int webserv(int argc, char* argv[]);
