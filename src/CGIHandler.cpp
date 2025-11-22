@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: nicolewicki <nicolewicki@student.42.fr>    +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 11:57:38 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/21 18:20:28 by nicolewicki      ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -89,7 +89,7 @@ std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std
 		close(pipeOut[0]);
 
 		// envs bauen
-		char* envp[env.size() + 1];
+		char** envp = new char*[env.size() + 1];
 		int i = 0;
 		for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end(); ++it)
 		{
