@@ -1,16 +1,21 @@
-
 CXX     := g++
 CXXFLAGS := -std=c++17 -Wall -Werror -Wextra -O2 -Iinclude
 
-DBGFLAGS := -g -O0
+DBGFLAGS := -g -O0 -DDEBUG
 
 NAME := webserv
 
 SRC_DIR := src
 OBJ_DIR := obj
 
-#muss noch raus
-SRCS := $(shell find $(SRC_DIR) -name '*.cpp')
+SRCS := \
+	src/CGIHandler.cpp \
+	src/config.cpp \
+	src/HTTPHandler.cpp \
+	src/main.cpp \
+	src/Response.cpp \
+	src/Server.cpp
+
 OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 
 DEPFLAGS := -MMD -MP
@@ -31,7 +36,6 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
 	@mkdir -p $(dir $@)
 	@$(CXX) $(CXXFLAGS) $(SANFLAGS) -c $< -o $@
 	@echo "Compiled $<"
-
 
 $(OBJ_DIR):
 	@mkdir -p $(OBJ_DIR)
