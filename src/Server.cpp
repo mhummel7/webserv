@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 11:07:19 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/26 11:19:33 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -213,12 +213,12 @@ void Server::handleListenerEvent(size_t index, long now_ms)
     }
 }
 
-bool Server::handleClientRead(size_t &i, long now_ms, char* buf)
+bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
 {
     // Lesen
     while (1)
     {
-        ssize_t n = ::read(fds[i].fd, buf, sizeof(buf));
+        ssize_t n = ::read(fds[i].fd, buf, buf_size);
         #ifdef DEBUG
         std::cout << "========= Read returned buf=" << buf << " =========" << std::endl;
         #endif
@@ -312,7 +312,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf)
                 fds[i].events |= POLLOUT;
             }
             
-            return true; // weiter lesen, falls Kernel noch mehr hat
+            return true;
         }
         else if (n == 0)
         {
@@ -441,7 +441,7 @@ int Server::run(int argc, char* argv[])
             if (fds[i].revents & POLLIN)
             {
                 
-                if (handleClientRead(i, now_ms, buf))
+                if (!handleClientRead(i, now_ms, buf, sizeof(buf)))
                     continue;
             }
             // Schreiben

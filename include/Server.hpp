@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:38 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 11:07:33 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/26 11:14:10 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -94,7 +94,7 @@ class Server
         //poll stuff
         void handleTimeouts(long now_ms, long idle_ms);
         void handleListenerEvent(size_t index, long now_ms);
-        bool handleClientRead(size_t &index, long now_ms, char* buf);
+        bool handleClientRead(size_t &index, long now_ms, char* buf, size_t buf_size);
         void handleClientWrite(size_t &index, long now_ms);
         void closeClient(size_t &index);
 };
