@@ -3,14 +3,14 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nicolewicki <nicolewicki@student.42.fr>    +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/21 18:20:28 by nicolewicki      ###   ########.fr       */
+/*   Updated: 2025/11/26 10:15:08 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "CGIHandler.hpp"
+#include "../include/CGIHandler.hpp"
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>

@@ -3,14 +3,14 @@
 /*                                                        :::      ::::::::   */
 /*   HTTPHandler.cpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/17 13:28:29 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/26 10:14:51 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
-#include "HTTPHandler.hpp"
+#include "../include/HTTPHandler.hpp"
 #include <iostream>
 #include <sstream>
 

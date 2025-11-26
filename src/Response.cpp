@@ -11,8 +11,8 @@
 /* ************************************************************************** */
 
 
-#include "Response.hpp"
-#include "CGIHandler.hpp"
+#include "../include/Response.hpp"
+#include "../include/CGIHandler.hpp"
 #include <fstream>
 #include <sstream>
 #include <sys/stat.h>
