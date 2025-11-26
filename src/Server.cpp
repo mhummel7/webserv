@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 11:19:33 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/26 11:22:25 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -95,43 +95,131 @@ int webserv(int argc, char* argv[])
     return server.run(argc, argv);
 }
 
+static void setupBuiltinDefaultConfig()
+{
+    ServerConfig srv;
+
+    srv.listen_host = "127.0.0.1";
+    srv.listen_port = 8080;
+    srv.server_name = "localhost";
+    srv.client_max_body_size = 2 * 1024 * 1024;  // 2M – wie in conf
+
+    // Globale Direktive
+    g_cfg.default_error_pages[404] = "/errors/404.html";
+    g_cfg.default_client_max_body_size = srv.client_max_body_size;
+
+    // === location / ===
+    {
+        LocationConfig loc;
+        loc.path = "/";
+        loc.root = "./root/html";
+        loc.index = "index.html";
+        loc.autoindex = true;
+        loc.methods = {"GET", "POST"};
+        srv.locations.push_back(loc);
+    }
+
+    // === location /data ===
+    {
+        LocationConfig loc;
+        loc.path = "/data";
+        loc.root = "./root/data";
+        loc.autoindex = true;
+        loc.methods = {"GET", "POST"};
+        srv.locations.push_back(loc);
+    }
+
+    // === location /root/cgi-bin ===
+    {
+        LocationConfig loc;
+        loc.path = "/root/cgi-bin";
+        loc.root = "./root/cgi-bin";
+        loc.cgi[".py"]  = "/usr/bin/python3";
+        loc.cgi[".php"] = "/usr/bin/php-cgi";
+        loc.methods = {"GET", "POST"};
+        srv.locations.push_back(loc);
+    }
+
+    // Alles übernehmen
+    g_cfg.servers.clear();
+    g_cfg.servers.push_back(srv);
+}
+
 void Server::loadConfig(int argc, char* argv[])
 {
-    // === 1. AUTOMATISCHER CONFIG-PFAD ===
-    const char* cfg_path = "./config/webserv.conf";
-    if (argc > 1) {
-        cfg_path = argv[1];  // Optional: ./webserv my.conf
+    if (argc > 2) {
+        std::cerr << "Usage: " << argv[0] << " [config_file.conf]\n";
+        exit(1);
     }
 
-    // === 2. CONFIG LADEN MIT FALLBACK ===
-    try
-    {
-        g_cfg.parse_c(cfg_path);
-        std::cout << "Config geladen: " << cfg_path << "\n";
-    } 
-    catch (const std::exception& e)
-    {
-        std::cerr << "Config-Fehler (" << cfg_path << "): " << e.what() << "\n";
-        std::cerr << "→ Starte mit Default-Server auf 127.0.0.1:8080\n";
+    std::string configPath;
 
-        // --- DEFAULT-SERVER MANUELL ANLEGEN ---
-        ServerConfig defaultServer;
-        defaultServer.listen_host = "127.0.0.1";
-        defaultServer.listen_port = 8080;
-        defaultServer.server_name = "default";
-        defaultServer.client_max_body_size = 1048576;  // 1MB
+    if (argc == 2) {
+        configPath = argv[1];
 
-        LocationConfig defaultLoc;
-        defaultLoc.path = "/";
-        defaultLoc.root = "./root/html";
-        defaultLoc.index = "index.html";
-        defaultLoc.autoindex = true;
-        defaultLoc.methods = {"GET", "POST", "DELETE"};
-
-        defaultServer.locations.push_back(defaultLoc);
-        g_cfg.servers.push_back(defaultServer);
+        // Nur .conf erlauben
+        if (configPath.size() < 5 || configPath.substr(configPath.size() - 5) != ".conf") {
+            std::cerr << "Error: Config file must have .conf extension!\n";
+            exit(1);
+        }
+    } else {
+        configPath = "./config/webserv.conf";
+        std::cout << "No config file specified → trying default: " << configPath << "\n";
     }
+
+    // Versuch, die Config zu laden
+    try {
+        g_cfg.parse_c(configPath);
+        std::cout << "Config successfully loaded: " << configPath << "\n";
+        return;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Failed to load config '" << configPath << "': " << e.what() << "\n";
+        std::cerr << "→ Starting with built-in default configuration\n";
+    }
+
+    // Fallback: manueller, 100 % aktueller Default-Server
+    setupBuiltinDefaultConfig();
+    std::cout << "Built-in default server activated on 127.0.0.1:8080\n";
 }
+
+// void Server::loadConfig(int argc, char* argv[])
+// {
+//     // === 1. AUTOMATISCHER CONFIG-PFAD ===
+//     const char* cfg_path = "./config/webserv.conf";
+//     if (argc > 1) {
+//         cfg_path = argv[1];  // Optional: ./webserv my.conf
+//     }
+
+//     // === 2. CONFIG LADEN MIT FALLBACK ===
+//     try
+//     {
+//         g_cfg.parse_c(cfg_path);
+//         std::cout << "Config geladen: " << cfg_path << "\n";
+//     }
+//     catch (const std::exception& e)
+//     {
+//         std::cerr << "Config-Fehler (" << cfg_path << "): " << e.what() << "\n";
+//         std::cerr << "→ Starte mit Default-Server auf 127.0.0.1:8080\n";
+
+//         // --- DEFAULT-SERVER MANUELL ANLEGEN ---
+//         ServerConfig defaultServer;
+//         defaultServer.listen_host = "127.0.0.1";
+//         defaultServer.listen_port = 8080;
+//         defaultServer.server_name = "default";
+//         defaultServer.client_max_body_size = 1048576;  // 1MB
+
+//         LocationConfig defaultLoc;
+//         defaultLoc.path = "/";
+//         defaultLoc.root = "./root/html";
+//         defaultLoc.index = "index.html";
+//         defaultLoc.autoindex = true;
+//         defaultLoc.methods = {"GET", "POST", "DELETE"};
+
+//         defaultServer.locations.push_back(defaultLoc);
+//         g_cfg.servers.push_back(defaultServer);
+//     }
+// }
 
 void Server::setupListeners()
 {
@@ -181,7 +269,7 @@ void Server::handleTimeouts(long now_ms, long IDLE_MS)
 void Server::handleListenerEvent(size_t index, long now_ms)
 {
     int fd = fds[index].fd;
-    
+
     while (1)
     {
         int cfd = accept(fd, NULL, NULL);
@@ -311,7 +399,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 c.tx         = res.toString();
                 fds[i].events |= POLLOUT;
             }
-            
             return true;
         }
         else if (n == 0)
@@ -411,12 +498,12 @@ int Server::run(int argc, char* argv[])
         int ready = poll(&fds[0], fds.size(), 1000);
         if (ready < 0)
         {
-            if (errno==EINTR) 
+            if (errno==EINTR)
                 continue;
             perror("poll");
             break;
         }
-        
+
         //Events abarbeiten
         for (size_t i = 0; i < fds.size(); ++i)
 		{
@@ -440,7 +527,7 @@ int Server::run(int argc, char* argv[])
             // Lesen
             if (fds[i].revents & POLLIN)
             {
-                
+
                 if (!handleClientRead(i, now_ms, buf, sizeof(buf)))
                     continue;
             }
