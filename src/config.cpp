@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 10:59:24 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/26 11:32:40 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -211,4 +211,17 @@ void Config::parse_c(const std::string& filename) {
 	}
 
 	resolveVariables();
+	// ────────────────────── VALIDIERUNG AM ENDE ──────────────────────
+	if (servers.empty()) {
+		throw std::runtime_error("No 'server {}' block found in config file");
+	}
+
+	for (const auto& srv : servers) {
+		if (srv.listen_port == 0) {
+			throw std::runtime_error("A server block is missing the 'listen' directive");
+		}
+		if (srv.locations.empty()) {
+			throw std::runtime_error("A server block has no location blocks");
+		}
+	}
 }

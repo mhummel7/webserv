@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 11:22:25 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/26 11:27:42 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -97,90 +97,90 @@ int webserv(int argc, char* argv[])
 
 static void setupBuiltinDefaultConfig()
 {
-    ServerConfig srv;
+	ServerConfig srv;
 
-    srv.listen_host = "127.0.0.1";
-    srv.listen_port = 8080;
-    srv.server_name = "localhost";
-    srv.client_max_body_size = 2 * 1024 * 1024;  // 2M – wie in conf
+	srv.listen_host = "127.0.0.1";
+	srv.listen_port = 8080;
+	srv.server_name = "localhost";
+	srv.client_max_body_size = 2 * 1024 * 1024;  // 2M – wie in conf
 
-    // Globale Direktive
-    g_cfg.default_error_pages[404] = "/errors/404.html";
-    g_cfg.default_client_max_body_size = srv.client_max_body_size;
+	// Globale Direktive
+	g_cfg.default_error_pages[404] = "/errors/404.html";
+	g_cfg.default_client_max_body_size = srv.client_max_body_size;
 
-    // === location / ===
-    {
-        LocationConfig loc;
-        loc.path = "/";
-        loc.root = "./root/html";
-        loc.index = "index.html";
-        loc.autoindex = true;
-        loc.methods = {"GET", "POST"};
-        srv.locations.push_back(loc);
-    }
+	// === location / ===
+	{
+		LocationConfig loc;
+		loc.path = "/";
+		loc.root = "./root/html";
+		loc.index = "index.html";
+		loc.autoindex = true;
+		loc.methods = {"GET", "POST"};
+		srv.locations.push_back(loc);
+	}
 
-    // === location /data ===
-    {
-        LocationConfig loc;
-        loc.path = "/data";
-        loc.root = "./root/data";
-        loc.autoindex = true;
-        loc.methods = {"GET", "POST"};
-        srv.locations.push_back(loc);
-    }
+	// === location /data ===
+	{
+		LocationConfig loc;
+		loc.path = "/root/data";
+		loc.root = "./root/data";
+		loc.autoindex = true;
+		loc.methods = {"GET", "POST"};
+		srv.locations.push_back(loc);
+	}
 
-    // === location /root/cgi-bin ===
-    {
-        LocationConfig loc;
-        loc.path = "/root/cgi-bin";
-        loc.root = "./root/cgi-bin";
-        loc.cgi[".py"]  = "/usr/bin/python3";
-        loc.cgi[".php"] = "/usr/bin/php-cgi";
-        loc.methods = {"GET", "POST"};
-        srv.locations.push_back(loc);
-    }
+	// === location /root/cgi-bin ===
+	{
+		LocationConfig loc;
+		loc.path = "/root/cgi-bin";
+		loc.root = "./root/cgi-bin";
+		loc.cgi[".py"]  = "/usr/bin/python3";
+		loc.cgi[".php"] = "/usr/bin/php-cgi";
+		loc.methods = {"GET", "POST"};
+		srv.locations.push_back(loc);
+	}
 
-    // Alles übernehmen
-    g_cfg.servers.clear();
-    g_cfg.servers.push_back(srv);
+	// Alles übernehmen
+	g_cfg.servers.clear();
+	g_cfg.servers.push_back(srv);
 }
 
 void Server::loadConfig(int argc, char* argv[])
 {
-    if (argc > 2) {
-        std::cerr << "Usage: " << argv[0] << " [config_file.conf]\n";
-        exit(1);
-    }
+	if (argc > 2) {
+		std::cerr << "Usage: " << argv[0] << " [config_file.conf]\n";
+		exit(1);
+	}
 
-    std::string configPath;
+	std::string configPath;
 
-    if (argc == 2) {
-        configPath = argv[1];
+	if (argc == 2) {
+		configPath = argv[1];
 
-        // Nur .conf erlauben
-        if (configPath.size() < 5 || configPath.substr(configPath.size() - 5) != ".conf") {
-            std::cerr << "Error: Config file must have .conf extension!\n";
-            exit(1);
-        }
-    } else {
-        configPath = "./config/webserv.conf";
-        std::cout << "No config file specified → trying default: " << configPath << "\n";
-    }
+		// Nur .conf erlauben
+		if (configPath.size() < 5 || configPath.substr(configPath.size() - 5) != ".conf") {
+			std::cerr << "Error: Config file must have .conf extension!\n";
+			exit(1);
+		}
+	} else {
+		configPath = "./config/webserv.conf";
+		std::cout << "No config file specified → trying default: " << configPath << "\n";
+	}
 
-    // Versuch, die Config zu laden
-    try {
-        g_cfg.parse_c(configPath);
-        std::cout << "Config successfully loaded: " << configPath << "\n";
-        return;
-    }
-    catch (const std::exception& e) {
-        std::cerr << "Failed to load config '" << configPath << "': " << e.what() << "\n";
-        std::cerr << "→ Starting with built-in default configuration\n";
-    }
+	// Versuch, die Config zu laden
+	try {
+		g_cfg.parse_c(configPath);
+		std::cout << "Config successfully loaded: " << configPath << "\n";
+		return;
+	}
+	catch (const std::exception& e) {
+		std::cerr << "Failed to load config '" << configPath << "': " << e.what() << "\n";
+		std::cerr << "→ Starting with built-in default configuration\n";
+	}
 
-    // Fallback: manueller, 100 % aktueller Default-Server
-    setupBuiltinDefaultConfig();
-    std::cout << "Built-in default server activated on 127.0.0.1:8080\n";
+	// Fallback: manueller, 100 % aktueller Default-Server
+	setupBuiltinDefaultConfig();
+	std::cout << "Built-in default server activated on 127.0.0.1:8080\n";
 }
 
 // void Server::loadConfig(int argc, char* argv[])
