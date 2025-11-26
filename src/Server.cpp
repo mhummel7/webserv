@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 11:27:42 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/26 11:37:17 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -417,7 +417,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
     }
 }
 
-void Server::handleClientWrite(size_t &i, long now_ms)
+bool Server::handleClientWrite(size_t &i, long now_ms)
 {
     Client &c = clients[i];
     while (!c.tx.empty())
@@ -434,7 +434,7 @@ void Server::handleClientWrite(size_t &i, long now_ms)
         if (m < 0)
         {
             perror("write");
-            break;
+            return false;
         }
     }
     if (c.tx.empty())
@@ -443,11 +443,15 @@ void Server::handleClientWrite(size_t &i, long now_ms)
         {
             reset_for_next_request(c);
             fds[i].events &= ~POLLOUT;          // zurück auf nur lesen
-            // Verbindung offen lassen
+            return true;
         }
         else
+        {
             closeClient(i);
+            return false;
+        }
     }
+    return true;
 }
 
 
@@ -534,7 +538,8 @@ int Server::run(int argc, char* argv[])
             // Schreiben
             if (fds[i].revents & POLLOUT)
 			{
-                handleClientWrite(i, now_ms);
+                if (!handleClientWrite(i, now_ms))
+                    continue;
             }
         }
     }
