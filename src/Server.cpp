@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/27 10:42:19 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/27 11:15:20 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -303,108 +303,132 @@ void Server::handleListenerEvent(size_t index, long now_ms)
 
 bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
 {
-    // Lesen
     while (1)
     {
         ssize_t n = ::read(fds[i].fd, buf, buf_size);
         #ifdef DEBUG
-        std::cout << "========= Read returned buf=" << buf << " =========" << std::endl;
+        std::cout << "========= Read returned n=" << n << " buf=" << buf << " =========" << std::endl;
         #endif
+
         if (n > 0)
         {
             Client &c = clients[i];
-
-
             c.last_active_ms = now_ms;
             c.rx.append(buf, n);
+
             #ifdef DEBUG
-            std::cout << "----- c.rx " <<c.rx << " -----" << std::endl;
+            std::cout << "----- c.rx ----\n" << c.rx << "\n----------------\n";
             #endif
 
+            // 1) Header-Ende suchen
             size_t headerEnd = c.rx.find("\r\n\r\n");
             if (headerEnd == std::string::npos)
-                continue; // Header noch nicht komplett, weiter lesen
+                continue; // Header noch nicht komplett
 
             std::string headers = c.rx.substr(0, headerEnd + 4);
-            size_t clPos = headers.find("Content-Length:");
+
+            // 2) Chunked oder Content-Length?
+            bool   isChunked     = false;
             size_t contentLength = 0;
-            if (clPos != std::string::npos)
+
+            // Transfer-Encoding prüfen
             {
-                clPos += std::string("Content-Length:").length();
-                // Whitespace überspringen
-                while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
-                    ++clPos;
-                size_t clEnd = headers.find("\r\n", clPos);
-                std::string clStr = headers.substr(clPos, clEnd - clPos);
-                contentLength = std::atoi(clStr.c_str());
-            }
-            
-            std::cout << "[DEBUG] CL=" << contentLength << " max=" << c.max_body_bytes << std::endl;
-
-            // --- NEU: Body-Limit prüfen ---
-            if (contentLength > 0 && c.max_body_bytes > 0 && contentLength > c.max_body_bytes)
-            {
-                std::cout << "[DEBUG] Body too large: " << contentLength << " > " << c.max_body_bytes << "\n";
-                // 413 Response bauen
-                Response res;
-                res.statusCode   = 413;
-                res.reasonPhrase = "Payload Too Large";
-                res.body         = "<h1>413 Payload Too Large</h1>";
-
-                // Minimal-Header
-                res.headers["Content-Type"]   = "text/html";
-                res.headers["Content-Length"] = std::to_string(res.body.size());
-                res.headers["Connection"]     = "close";
-                res.headers["Server"]         = "webserv/1.0";
-
-                // Antwort in den Client schreiben
-                c.tx         = res.toString();
-                c.keep_alive = false;
-                fds[i].events |= POLLOUT;
-
-                // eingelesene Daten verwerfen
-                c.rx.clear();
-                c.state = RxState::READY;
-
-                // Body NICHT weiter lesen, Request NICHT parsen
-                return true;
-            }
-            
-            size_t totalNeeded = headerEnd + 4 + contentLength;
-            if (c.rx.size() < totalNeeded)
-            {
-                // noch nicht den ganzen Body -> noch nichts parsen, weiter recv() machen
-                continue;
+                size_t tePos = headers.find("Transfer-Encoding:");
+                if (tePos != std::string::npos)
+                {
+                    size_t lineEnd = headers.find("\r\n", tePos);
+                    std::string teLine = headers.substr(tePos, lineEnd - tePos);
+                    if (teLine.find("chunked") != std::string::npos)
+                        isChunked = true;
+                }
             }
 
-            std::string fullRequest = c.rx.substr(0, totalNeeded);
+            // Content-Length (nur wenn NICHT chunked)
+            if (!isChunked)
+            {
+                size_t clPos = headers.find("Content-Length:");
+                if (clPos != std::string::npos)
+                {
+                    clPos += std::string("Content-Length:").length();
+                    while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
+                        ++clPos;
+                    size_t clEnd = headers.find("\r\n", clPos);
+                    std::string clStr = headers.substr(clPos, clEnd - clPos);
+                    contentLength = std::atoi(clStr.c_str());
+                }
+            }
 
-            Request req = RequestParser().parse(fullRequest);
             #ifdef DEBUG
-            std::cout << "Body :" << req.body << ":\n";
+            std::cout << "[DEBUG] isChunked=" << isChunked
+                      << " CL=" << contentLength
+                      << " max=" << c.max_body_bytes << std::endl;
             #endif
 
-            c.state = RxState::READY;
+            size_t totalNeeded = 0;
+
+            if (isChunked)
+            {
+                size_t bodyStart = headerEnd + 4;
+                // 3a) Chunked: auf Terminator \r\n0\r\n\r\n warten
+                size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
+                if (endMarker == std::string::npos)
+                {
+                    // noch nicht alles da
+                    continue;
+                }
+                // substring schließt das "\r\n0\r\n\r\n" mit ein (7 Zeichen)
+                totalNeeded = endMarker + 5;
+            }
+            else
+            {
+                // 3b) Non-chunked: Header + Content-Length
+                totalNeeded = headerEnd + 4 + contentLength;
+                if (c.rx.size() < totalNeeded)
+                {
+                    // noch nicht kompletter Body da
+                    continue;
+                }
+            }
+
+            // 4) Vollständigen Request-String extrahieren
+            std::string fullRequest = c.rx.substr(0, totalNeeded);
+
+            // 5) Parsen
+            Request req = RequestParser().parse(fullRequest);
+            #ifdef DEBUG
+            std::cout << "Parsed request: method=" << req.method
+                      << " path=" << req.path
+                      << " version=" << req.version
+                      << " content_len=" << req.content_len
+                      << " body.size()=" << req.body.size()
+                      << std::endl;
+            #endif
+
+            c.state  = RxState::READY;
             c.target = req.path;
 
-            // Verbrauchte Bytes aus dem Buffer entfernen (wichtig bei keep-alive!)
+            // Verbrauchte Bytes aus Buffer löschen (wichtig für Keep-Alive)
             c.rx.erase(0, totalNeeded);
 
-            // Limits an finalen Server anpassen (z. B. 413 später korrekt)
+            // Limits an finalen Server anpassen
             const ServerConfig& sc = g_cfg.servers[c.server_idx];
             c.max_body_bytes = sc.client_max_body_size;
 
-            // ---- Location bestimmen (Longest Prefix Match) ----
+            // 6) Location bestimmen (Longest Prefix Match)
             auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
             {
                 size_t best = 0, best_len = 0;
-                for (size_t i = 0; i < sc.locations.size(); ++i) {
+                for (size_t i = 0; i < sc.locations.size(); ++i)
+                {
                     const std::string& p = sc.locations[i].path;
-                    if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len) {
-                        best = i; best_len = p.size();
+                    if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
+                    {
+                        best = i;
+                        best_len = p.size();
                     }
                 }
-                if (best_len == 0) {
+                if (best_len == 0)
+                {
                     for (size_t i = 0; i < sc.locations.size(); ++i)
                         if (sc.locations[i].path == "/") return sc.locations[i];
                     return sc.locations.front();
@@ -413,22 +437,27 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             };
 
             const LocationConfig& lc = resolve_location(sc, c.target);
-            #ifdef DEBUG
-            std::cout << "lc root " << lc.root << std::endl;
-            #endif
-            c.last_active_ms = now_ms;
 
+            #ifdef DEBUG
+            std::cout << "Resolved location: path=" << lc.path
+                      << " root=" << lc.root << std::endl;
+            #endif
+
+            // 7) Response generieren
             if (c.state == RxState::READY && c.tx.empty())
             {
-                req.conn_fd   = fds[i].fd;
+                req.conn_fd = fds[i].fd;
 
                 ResponseHandler handler;
                 #ifdef DEBUG
-                std::cout << "method: " << req.method << ", path: " << req.path << std::endl;
+                std::cout << "Dispatching to ResponseHandler: method=" << req.method
+                          << " path=" << req.path << std::endl;
                 #endif
-                Response res = handler.handleRequest(req, lc);
 
-                c.keep_alive = res.keep_alive; // Server-Core entscheidet final über close/keep-alive
+                // Ich gehe von deiner neuen Signatur aus: handleRequest(req, lc, sc)
+                Response res = handler.handleRequest(req, lc, sc);
+
+                c.keep_alive = res.keep_alive;
                 c.tx         = res.toString();
                 fds[i].events |= POLLOUT;
             }
@@ -436,19 +465,21 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         }
         else if (n == 0)
         {
+            // Verbindung geschlossen
             closeClient(i);
             return false;
         }
         else
         {
             if (errno == EAGAIN || errno == EWOULDBLOCK)
-                return true; // alles gelesen
+                return true; // momentan alles gelesen
             perror("read");
             closeClient(i);
             return false;
         }
     }
 }
+
 
 bool Server::handleClientWrite(size_t &i, long now_ms)
 {

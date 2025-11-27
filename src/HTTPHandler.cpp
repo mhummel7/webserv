@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   HTTPHandler.cpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 10:14:51 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/27 11:04:05 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -89,16 +89,14 @@ Request RequestParser::parse(const std::string& rawRequest)
     std::istringstream stream(rawRequest);
     std::string line;
 
-    //output Request path for debug
-    // std::cout << "Raw Request:\n" << rawRequest << std::endl;
-    // Read and parse the request-line once
+    // Request-Line
     if (!std::getline(stream, line))
         return req; // empty request
     if (!line.empty() && line.back() == '\r')
         line.pop_back();
     parseRequestLine(line, req);
 
-    // Read headers
+    // Header
     while (std::getline(stream, line))
     {
         if (!line.empty() && line.back() == '\r')
@@ -110,14 +108,17 @@ Request RequestParser::parse(const std::string& rawRequest)
 
     // Connection / keep-alive logic
     if (req.version == "HTTP/1.1")
-        req.keep_alive = !(req.headers.count("Connection") && req.headers["Connection"] == "close");
+        req.keep_alive = !(req.headers.count("Connection")
+                           && req.headers["Connection"] == "close");
     else if (req.version == "HTTP/1.0")
-        req.keep_alive = (req.headers.count("Connection") && req.headers["Connection"] == "keep-alive");
+        req.keep_alive = (req.headers.count("Connection")
+                          && req.headers["Connection"] == "keep-alive");
     else
         std::cerr << "Invalid HTTP version" << std::endl;
 
-    // Transfer-Encoding / Content-Length
-    if (req.headers.count("Transfer-Encoding") && req.headers["Transfer-Encoding"] == "chunked")
+    // ===== Transfer-Encoding / Content-Length aus den Headern lesen =====
+    if (req.headers.count("Transfer-Encoding")
+        && req.headers["Transfer-Encoding"] == "chunked")
     {
         req.is_chunked = true;
     }
@@ -131,7 +132,7 @@ Request RequestParser::parse(const std::string& rawRequest)
         }
     }
 
-    // Body: prefer exact Content-Length when provided
+    // ===== Body einlesen =====
     if (req.is_chunked)
     {
         std::string err;
@@ -139,6 +140,12 @@ Request RequestParser::parse(const std::string& rawRequest)
         {
             std::cerr << "Chunked decode error: " << err << std::endl;
             req.body.clear();
+            req.content_len = 0;
+        }
+        else
+        {
+            // WICHTIG: jetzt kennen wir die tatsächliche Länge
+            req.content_len = req.body.size();
         }
     }
     else if (req.content_len > 0)
@@ -152,14 +159,16 @@ Request RequestParser::parse(const std::string& rawRequest)
     }
     else
     {
-        // read any remaining data
+        // Kein CL, kein chunked → Rest als Body lesen
         std::string rest;
         std::getline(stream, rest, '\0');
         req.body = rest;
+        req.content_len = req.body.size();
     }
 
     return req;
 }
+
 
 static inline std::string trim(const std::string& s)
 {

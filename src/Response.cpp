@@ -509,16 +509,27 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
 	return res;
 }
 
-Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& config)
+Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& config, const ServerConfig& serverConfig)
 {
 	Response res;
 	res.keep_alive = req.keep_alive;
 
-	// default headers & cookies
-	setHeaders(res, req);
-	
+    
+    size_t maxBody = serverConfig.client_max_body_size;  // z.B. 10M vom Server geerbt
+    if (maxBody > 0 && req.content_len > maxBody)
+    {
+        res.statusCode   = 413;
+        res.reasonPhrase = "Payload Too Large";
+        res.body         = "<h1>413 Payload Too Large</h1>";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        res.headers["Content-Type"]   = "text/html";
+        res.keep_alive = false;
+        return res;
+    }
 	std::string path = config.root + "/" + config.index; // default path
-
+    // default headers & cookies
+    setHeaders(res, req);
+    
 #ifdef DEBUG
 	printf("path: %s\n", path.c_str());
 #endif

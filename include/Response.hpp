@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Response.hpp                                       :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/20 11:27:37 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/27 10:55:27 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,7 +37,7 @@ class ResponseHandler
 		ResponseHandler();
 		~ResponseHandler();
 
-		Response handleRequest(const Request& req, const LocationConfig& config);
+		Response handleRequest(const Request& req, const LocationConfig& config, const ServerConfig& serverConfig);
 
 	private:
 		std::string getStatusMessage(int code);
