@@ -522,15 +522,18 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 #ifdef DEBUG
 	printf("path: %s\n", path.c_str());
 #endif
-	if (req.method == "GET")
+	if (req.method == "GET" && config.methods.end() !=
+        std::find(config.methods.begin(), config.methods.end(), "GET"))
 	{
 		return methodGET(req, res, config);
 	}
-	else if (req.method == "POST")
+	else if (req.method == "POST" && config.methods.end() !=
+        std::find(config.methods.begin(), config.methods.end(), "POST"))
 	{
 		return methodPOST(req, res, config);
 	}
-	else if (req.method == "DELETE")
+	else if (req.method == "DELETE" && config.methods.end() !=
+        std::find(config.methods.begin(), config.methods.end(), "DELETE"))
 	{
 		return methodDELETE(req, res, config);
 	}
