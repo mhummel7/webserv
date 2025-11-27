@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/27 11:15:20 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/27 11:56:26 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -315,6 +315,22 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             Client &c = clients[i];
             c.last_active_ms = now_ms;
             c.rx.append(buf, n);
+
+            // Hard-Limit: zu viel Body im Buffer → 413
+           if (c.rx.size() > c.max_body_bytes + 8192) { // + etwas Toleranz für Header
+                ResponseHandler handler;
+
+                Response res = handler.makeHtmlResponse(413, "<h1>413 Payload Too Large</h1>");
+                res.keep_alive = false;          // Verbindung wird nach Antwort geschlossen
+                c.tx = res.toString();
+
+                c.rx.clear();                    // Body verwerfen
+                fds[i].events &= ~POLLIN;        // nichts mehr lesen
+                fds[i].events |= POLLOUT;        // nur noch schreiben
+
+                return true;
+            }
+
 
             #ifdef DEBUG
             std::cout << "----- c.rx ----\n" << c.rx << "\n----------------\n";

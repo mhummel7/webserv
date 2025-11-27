@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 10:15:08 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/11/27 12:13:14 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -67,6 +67,109 @@ static std::string getInterpreter(const std::string& scriptPath)
         return "/usr/local/bin/php-cgi";
     return "";
 }
+
+Response CGIHandler::executeWith(const Request& req,
+                                 const std::string& execPath,
+                                 const std::string& scriptFile)
+{
+    Response res;
+
+    std::cout << "Executing CGI executable: " << execPath
+              << " (script file: " << scriptFile << ")" << std::endl;
+
+    // env: SCRIPT_FILENAME = scriptFile
+    std::map<std::string, std::string> env = buildEnv(req, scriptFile);
+
+    int pipeIn[2];
+    int pipeOut[2];
+
+    if (pipe(pipeIn) < 0 || pipe(pipeOut) < 0)
+    {
+        perror("pipe");
+        res.statusCode = 500;
+        res.reasonPhrase = "Internal Server Error";
+        res.body = "<h1>CGI pipe error</h1>";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        res.headers["Content-Type"] = "text/html";
+        return res;
+    }
+
+    pid_t pid = fork();
+    if (pid == 0)
+    {
+        // Child
+        dup2(pipeIn[0], STDIN_FILENO);
+        dup2(pipeOut[1], STDOUT_FILENO);
+        close(pipeIn[1]);
+        close(pipeOut[0]);
+
+        // envp bauen
+        char** envp = new char*[env.size() + 1];
+        int i = 0;
+        for (std::map<std::string, std::string>::const_iterator it = env.begin();
+             it != env.end(); ++it)
+        {
+            std::string entry = it->first + "=" + it->second;
+            envp[i++] = strdup(entry.c_str());
+        }
+        envp[i] = NULL;
+
+        // argv bauen:
+        //   - wenn scriptFile nicht leer: execPath scriptFile
+        //   - sonst nur execPath
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(execPath.c_str()));
+        if (!scriptFile.empty())
+            argv.push_back(const_cast<char*>(scriptFile.c_str()));
+        argv.push_back(NULL);
+
+        execve(execPath.c_str(), &argv[0], envp);
+        perror("execve");
+        exit(1);
+    }
+    else if (pid > 0)
+    {
+        // Parent
+        close(pipeIn[0]);
+        close(pipeOut[1]);
+
+        if (!req.body.empty())
+        {
+            ssize_t written = write(pipeIn[1], req.body.c_str(), req.body.size());
+            if (written < 0)
+                perror("write to CGI stdin");
+        }
+        close(pipeIn[1]);
+
+        std::ostringstream output;
+        char buffer[4096];
+        ssize_t bytes;
+        while ((bytes = read(pipeOut[0], buffer, sizeof(buffer))) > 0)
+            output.write(buffer, bytes);
+        close(pipeOut[0]);
+
+        waitpid(pid, NULL, 0);
+
+        std::string out = output.str();
+        res.statusCode = 200;
+        res.reasonPhrase = "OK";
+        res.headers["Content-Type"] = "text/html";
+        res.body = out;
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        return res;
+    }
+    else
+    {
+        perror("fork");
+        res.statusCode = 500;
+        res.reasonPhrase = "Internal Server Error";
+        res.body = "<h1>CGI fork error</h1>";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        res.headers["Content-Type"] = "text/html";
+        return res;
+    }
+}
+
 
 std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, const std::string& body)
 {

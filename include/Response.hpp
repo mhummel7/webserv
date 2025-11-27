@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/27 10:55:27 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/11/27 12:01:45 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,6 +38,7 @@ class ResponseHandler
 		~ResponseHandler();
 
 		Response handleRequest(const Request& req, const LocationConfig& config, const ServerConfig& serverConfig);
+		Response makeHtmlResponse(int status, const std::string& body);
 
 	private:
 		std::string getStatusMessage(int code);
@@ -46,11 +47,10 @@ class ResponseHandler
 		Response& methodGET(const Request& req, Response& res, const LocationConfig& config);
 		Response& methodPOST(const Request& req, Response& res, const LocationConfig& config);
 		Response& methodDELETE(const Request& req, Response& res, const LocationConfig& config);
-		Response makeHtmlResponse(int status, const std::string& body);
 		bool handleDirectoryRequest(const std::string& url, const std::string& fsPath,
                                    const LocationConfig& config, Response& res);
 		bool handleFileOrCgi(const Request& req, const std::string& fsPath,
-                            Response& res);
+                            const LocationConfig& config, Response& res);
 
 	};
 

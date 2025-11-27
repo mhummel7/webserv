@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.hpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/10/21 09:27:21 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/11/27 12:04:43 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,7 +26,7 @@ public:
 
 	// Führt das CGI-Script aus und gibt HTTP-Response zurück
 	Response execute(const Request& req);
-
+	Response executeWith(const Request& req, const std::string& execPath, const std::string& scriptFile);
 private:
 	// Hilfsfunktionen
 	std::map<std::string, std::string> buildEnv(const Request& req, const std::string& scriptPath);

@@ -289,22 +289,49 @@ bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::
 
 // handle static file or CGI. returns true if handled (res filled), false if not found.
 bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsPath,
-                            Response& res)
+                            const LocationConfig& config, Response& res)
 {
-    if (!fileExists(fsPath)) return false;
+    if (!fileExists(fsPath))
+        return false;
 
-    if (isCGIRequest(fsPath)) {
+    // Extension bestimmen (inklusive Punkt: ".bla")
+    std::string ext;
+    size_t dot = fsPath.find_last_of('.');
+    if (dot != std::string::npos)
+        ext = fsPath.substr(dot);
+
+    // 1) location-spezifisches CGI-Mapping, z.B.:
+    //    cgi .bla ./cgi_tester;
+    std::map<std::string, std::string>::const_iterator it = config.cgi.find(ext);
+    if (it != config.cgi.end())
+    {
+        const std::string& execPath = it->second; // z.B. "./cgi_tester"
+
         CGIHandler cgi;
-        Request req_cgi = req;
-        req_cgi.path = fsPath; // pass filesystem path to CGI
-        res = cgi.execute(req_cgi);
-        res.keep_alive = req.keep_alive;
-        // ensure Content-Length set by CGI or default
-        if (!res.headers.count("Content-Length")) res.headers["Content-Length"] = std::to_string(res.body.size());
+        // wir geben dem CGI Handler den Pfad der ausführbaren Datei
+        // und die eigentliche angeforderte .bla-Datei (fsPath) als "Script-Datei"
+        Response r = cgi.executeWith(req, execPath, fsPath);
+
+        r.keep_alive = req.keep_alive;
+        if (!r.headers.count("Content-Length"))
+            r.headers["Content-Length"] = std::to_string(r.body.size());
+        res = r;
         return true;
     }
 
-    // static file
+    // 2) Klassische CGI-Erkennung nach Extension (.py/.php/.cgi)
+    if (isCGIRequest(fsPath)) {
+        CGIHandler cgi;
+        Request req_cgi = req;
+        req_cgi.path = fsPath; // echtes Skript im Dateisystem
+        res = cgi.execute(req_cgi);
+        res.keep_alive = req.keep_alive;
+        if (!res.headers.count("Content-Length"))
+            res.headers["Content-Length"] = std::to_string(res.body.size());
+        return true;
+    }
+
+    // 3) Statische Datei
     res.statusCode = 200;
     res.reasonPhrase = ResponseHandler().getStatusMessage(200);
     res.body = readFile(fsPath);
@@ -350,14 +377,16 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
     }
 
     // file handling (CGI or static)
-    if (handleFileOrCgi(req, fsPath, res)) {
+    // file handling (CGI or static)
+    if (handleFileOrCgi(req, fsPath, config, res)) {
         // inject color only for text/html static responses (leave CGI response intact)
         if (res.headers["Content-Type"] == "text/html") {
             size_t pos = res.body.find("<body");
             if (pos != std::string::npos) {
                 size_t end = res.body.find(">", pos);
                 if (end != std::string::npos) {
-                    std::string insert = " style=\"--user-color: " + (color.empty() ? std::string("#ffffff") : color) + ";\"";
+                    std::string insert = " style=\"--user-color: " +
+                        (color.empty() ? std::string("#ffffff") : color) + ";\"";
                     res.body.insert(end, insert);
                     res.headers["Content-Length"] = std::to_string(res.body.size());
                 }
@@ -366,6 +395,7 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
         return res;
     }
 
+
     // not found
     res = makeHtmlResponse(404, "<h1>404 Not Found</h1>");
     return res;
@@ -373,9 +403,49 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
 
 Response& ResponseHandler::methodPOST(const Request& req, Response& res, const LocationConfig& config)
 {
-	std::string dir = config.root;
-	if (dir.empty())
-		dir = "./root/data/"; // Fallback, sollte eigentlich nicht nötig sein
+    // Zuerst CGI-Fälle prüfen (z.B. .bla)
+    std::string url = urlDecode(req.path);
+    if (url.empty()) url = "/";
+    url = normalizePath(url);
+
+    if (containsPathTraversal(url)) {
+        res = makeHtmlResponse(403, "<h1>403 Forbidden</h1>");
+        return res;
+    }
+
+    // Filesystem-Pfad wie in GET bauen
+    std::string fsPath = config.root.empty() ? std::string(".") : config.root;
+    std::string trimmedUrl = url;
+    if (!config.path.empty() && config.path != "/" && trimmedUrl.find(config.path) == 0) {
+        trimmedUrl = trimmedUrl.substr(config.path.length());
+        if (trimmedUrl.empty()) trimmedUrl = "/";
+    }
+    fsPath = joinPath(fsPath, trimmedUrl);
+
+    // Extension bestimmen
+    std::string ext;
+    size_t dot = fsPath.find_last_of('.');
+    if (dot != std::string::npos)
+        ext = fsPath.substr(dot);
+
+    // Wenn Location ein CGI für diese Extension definiert hat → direkt CGI
+    std::map<std::string, std::string>::const_iterator it = config.cgi.find(ext);
+    if (it != config.cgi.end())
+    {
+        const std::string& execPath = it->second;
+        CGIHandler cgi;
+        Response r = cgi.executeWith(req, execPath, fsPath);
+        r.keep_alive = req.keep_alive;
+        if (!r.headers.count("Content-Length"))
+            r.headers["Content-Length"] = std::to_string(r.body.size());
+        res = r;
+        return res;
+    }
+
+    // --- ALTER CODE (Upload) AB HIER ---
+    std::string dir = config.root;
+    if (dir.empty())
+        dir = "./root/data/"; // Fallback, sollte eigentlich nicht nötig sein
 
 #ifdef DEBUG
 	std::cout << "POST data dir: " << dir << std::endl;
