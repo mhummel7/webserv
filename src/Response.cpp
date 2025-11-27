@@ -283,7 +283,7 @@ bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::
         return true;
     }
     // index disabled
-    res = makeHtmlResponse(403, "<h1>403 Forbidden</h1><p>Index disabled.</p>");
+    res = makeHtmlResponse(404, "<h1>404 Not Found</h1>");
     return true;
 }
 
@@ -522,6 +522,13 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 #ifdef DEBUG
 	printf("path: %s\n", path.c_str());
 #endif
+
+    // debug check allowed mehtods
+    std::cout << "Allowed methods: ";
+    for (size_t i = 0; i < config.methods.size(); ++i)
+        std::cout << config.methods[i] << " ";
+    std::cout << std::endl;
+
 	if (req.method == "GET" && config.methods.end() !=
         std::find(config.methods.begin(), config.methods.end(), "GET"))
 	{
