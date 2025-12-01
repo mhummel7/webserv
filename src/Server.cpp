@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/01 14:45:11 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/01 15:39:23 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -407,57 +407,84 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             }
 
             // 4) Vollständigen Request-String extrahieren
-            std::string fullRequest = c.rx.substr(0, totalNeeded);
+			std::string fullRequest = c.rx.substr(0, totalNeeded);
 
-            // 5) Parsen
-            Request req = RequestParser().parse(fullRequest);
-            #ifdef DEBUG
-            std::cout << "Parsed request: method=" << req.method
-                      << " path=" << req.path
-                      << " version=" << req.version
-                      << " content_len=" << req.content_len
-                      << " body.size()=" << req.body.size()
-                      << std::endl;
-            #endif
+			// 5) Parsen
+			Request req = RequestParser().parse(fullRequest);
+			#ifdef DEBUG
+			std::cout << "Parsed request: method=" << req.method
+					<< " path=" << req.path
+					<< " version=" << req.version
+					<< " content_len=" << req.content_len
+					<< " body.size()=" << req.body.size()
+					<< std::endl;
+			#endif
 
-            c.state  = RxState::READY;
-            c.target = req.path;
+			// NEU: Virtual Host Matching (sicher: Checks + Defaults)
+			int port = port_by_listener_fd[fds[i].fd];  // Listener-Port (Client-FD hat denselben)
+			c.server_idx = 0;  // SAFE DEFAULT: Erster Server, falls alles failt
+			std::string host = req.headers["Host"];
+			bool found = false;
+			if (!host.empty() && servers_by_port.find(port) != servers_by_port.end() && !servers_by_port[port].empty()) {
+				// Clean Host (remove port, e.g. "example.com:8080" -> "example.com")
+				size_t colon_pos = host.find(':');
+				if (colon_pos != std::string::npos) {
+					host = host.substr(0, colon_pos);
+				}
 
-            // Verbrauchte Bytes aus Buffer löschen (wichtig für Keep-Alive)
-            c.rx.erase(0, totalNeeded);
+				// Suche Match in servers_by_port[port]
+				for (size_t idx : servers_by_port[port]) {
+					if (g_cfg.servers[idx].server_name == host) {
+						c.server_idx = idx;
+						found = true;
+						break;
+					}
+				}
+			}
 
-            // Limits an finalen Server anpassen
-            const ServerConfig& sc = g_cfg.servers[c.server_idx];
-            c.max_body_bytes = sc.client_max_body_size;
+			#ifdef DEBUG
+			std::cout << "[DEBUG VHOST] Selected server_idx=" << c.server_idx
+					<< " (host='" << host << "', found=" << found << ")" << std::endl;
+			#endif
 
-            // 6) Location bestimmen (Longest Prefix Match)
-            auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
-            {
-                size_t best = 0, best_len = 0;
-                for (size_t i = 0; i < sc.locations.size(); ++i)
-                {
-                    const std::string& p = sc.locations[i].path;
-                    if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
-                    {
-                        best = i;
-                        best_len = p.size();
-                    }
-                }
-                if (best_len == 0)
-                {
-                    for (size_t i = 0; i < sc.locations.size(); ++i)
-                        if (sc.locations[i].path == "/") return sc.locations[i];
-                    return sc.locations.front();
-                }
-                return sc.locations[best];
-            };
+			c.state  = RxState::READY;
+			c.target = req.path;
 
-            const LocationConfig& lc = resolve_location(sc, c.target);
+			// Verbrauchte Bytes aus Buffer löschen (wichtig für Keep-Alive)
+			c.rx.erase(0, totalNeeded);
 
-            #ifdef DEBUG
-            std::cout << "Resolved location: path=" << lc.path
-                      << " root=" << lc.root << std::endl;
-            #endif
+			// Limits an finalen Server anpassen (sicher: c.server_idx gesetzt)
+			const ServerConfig& sc = g_cfg.servers[c.server_idx];
+			c.max_body_bytes = sc.client_max_body_size;
+
+			// 6) Location bestimmen (Longest Prefix Match) – Rest unverändert
+			auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
+			{
+				size_t best = 0, best_len = 0;
+				for (size_t j = 0; j < sc.locations.size(); ++j)
+				{
+					const std::string& p = sc.locations[j].path;
+					if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
+					{
+						best = j;
+						best_len = p.size();
+					}
+				}
+				if (best_len == 0)
+				{
+					for (size_t j = 0; j < sc.locations.size(); ++j)
+						if (sc.locations[j].path == "/") return sc.locations[j];
+					return sc.locations.front();
+				}
+				return sc.locations[best];
+			};
+
+			const LocationConfig& lc = resolve_location(sc, c.target);
+
+			#ifdef DEBUG
+			std::cout << "Resolved location: path=" << lc.path
+					<< " root=" << lc.root << std::endl;
+			#endif
 
             // 7) Response generieren
             if (c.state == RxState::READY && c.tx.empty())
