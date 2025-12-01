@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/27 12:13:14 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/01 16:16:51 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -24,7 +24,7 @@ CGIHandler::~CGIHandler() {}
 Response CGIHandler::execute(const Request& req)
 {
 	Response res;
-	
+
 	std::cout << "Executing CGI script: " << req.path << std::endl;
 
 	// baue Umgebungsvariablen
@@ -226,21 +226,42 @@ std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std
 		close(pipeIn[0]);
 		close(pipeOut[1]);
 
-		// schreibe Request-Body an CGI
-		if (!body.empty())
-		{
-			ssize_t written = write(pipeIn[1], body.c_str(), body.size()); //leoleoleo
-			if (written < 0)
-				perror("write to CGI stdin");
+		// Schreibe Request-Body an CGI (full write loop)
+		if (!body.empty()) {
+			size_t to_write = body.size();
+			const char* ptr = body.c_str();
+			while (to_write > 0) {
+				ssize_t written = write(pipeIn[1], ptr, to_write);
+				if (written < 0) {
+					if (errno == EAGAIN || errno == EINTR) continue;  // Retry
+					perror("write to CGI stdin");
+					close(pipeIn[1]);
+					return "<h1>CGI write error</h1>";
+				} else if (written == 0) {
+					// EOF – unlikely
+					break;
+				}
+				ptr += written;
+				to_write -= written;
+			}
 		}
 		close(pipeIn[1]);
 
-		// lese Ausgabe vom CGI
+		// Lese Ausgabe vom CGI (loop bis EOF)
 		std::ostringstream output;
 		char buffer[4096];
-		ssize_t bytes;
-		while ((bytes = read(pipeOut[0], buffer, sizeof(buffer))) > 0)
-			output.write(buffer, bytes);
+		while (true) {
+			ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
+			if (bytes > 0) {
+				output.write(buffer, bytes);
+			} else if (bytes == 0) {
+				break;  // EOF
+			} else {  // bytes < 0
+				if (errno == EAGAIN || errno == EINTR) continue;
+				perror("read from CGI stdout");
+				break;
+			}
+		}
 		close(pipeOut[0]);
 
 		waitpid(pid, NULL, 0);
