@@ -191,8 +191,9 @@ std::string ResponseHandler::getStatusMessage(int code)
 	{
 		case 200: return "OK";
 		case 404: return "Not Found";
-		case 405: return "Method not Allowed";
-		default : return "Unkown";
+		case 405: return "Method Not Allowed";
+		case 413: return "Payload Too Large";
+		default : return "Unknown";
 	}
 }
 
@@ -516,7 +517,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
 	// default headers & cookies
 	setHeaders(res, req);
-	
+
 	std::string path = config.root + "/" + config.index; // default path
 
 #ifdef DEBUG
