@@ -579,67 +579,106 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
 	return res;
 }
 
-Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& config, const ServerConfig& serverConfig)
+Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig,
+                                        const ServerConfig& serverConfig, size_t global_max_body)
 {
-	Response res;
-	res.keep_alive = req.keep_alive;
+    Response res;
+    res.keep_alive = req.keep_alive;
 
-    
-    size_t maxBody = serverConfig.client_max_body_size;  // z.B. 10M vom Server geerbt
-    if (maxBody > 0 && req.content_len > maxBody)
-    {
-        res.statusCode   = 413;
+    // HIERARCHISCHE MAX-BODY-BERECHNUNG: location > server > global
+    size_t maxBody = global_max_body;  // Global-Fallback (z.B. 10M aus Config)
+    if (locConfig.client_max_body_size > 0) {
+        maxBody = locConfig.client_max_body_size;  // Location-Override (z.B. 100 für /post_body)
+    } else if (serverConfig.client_max_body_size > 0) {
+        maxBody = serverConfig.client_max_body_size;  // Server-Override
+    }
+
+    // Dein X-Block-Check (behältst du? – triggert immer 413, unabh. von maxBody)
+    if (req.headers.count("X-Block-Large-Post")) {
+        res.statusCode = 413;
         res.reasonPhrase = "Payload Too Large";
-        res.body         = "<h1>413 Payload Too Large</h1>";
+        res.body = "<h1>413 – Too big for .bla</h1>";
+        res.headers["Content-Type"] = "text/html";
         res.headers["Content-Length"] = std::to_string(res.body.size());
-        res.headers["Content-Type"]   = "text/html";
+        return res;
+    }
+
+    // DEBUG-AUSGABE (angepasst: verwendet locConfig und lokale Vars)
+#ifdef DEBUG
+    std::cout << "[DEBUG] Request-Info für Path '" << req.path << "':" << std::endl;
+    std::cout << "  - Method: " << req.method << std::endl;
+    std::cout << "  - Content-Length: " << req.content_len << " Bytes" << std::endl;
+    std::cout << "  - Body-Größe (tatsächl.): " << req.body.size() << " Bytes" << std::endl;
+    std::cout << "  - Effektives maxBody-Limit: " << maxBody << " Bytes" << std::endl;
+    std::cout << "  - Location-Limit: " << locConfig.client_max_body_size << " Bytes (0 = keins)" << std::endl;
+    std::cout << "  - Server-Limit: " << serverConfig.client_max_body_size << " Bytes (0 = keins)" << std::endl;
+    std::cout << "  - Global-Limit: " << global_max_body << " Bytes" << std::endl;
+    if (req.content_len > maxBody) {
+        std::cout << "  -> **413 TRIGGER: Body zu groß! Erhöhe Limit oder verkleinere File.**" << std::endl;
+    } else {
+        std::cout << "  -> OK: Body passt." << std::endl;
+    }
+    std::cout << "----------------------------------------" << std::endl;
+#endif
+
+    // 413-CHECK (jetzt mit hierarchischem maxBody)
+    if (maxBody > 0 && req.content_len > maxBody) {
+        res.statusCode = 413;
+        res.reasonPhrase = "Payload Too Large";
+        res.body = "<h1>413 Payload Too Large</h1>";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        res.headers["Content-Type"] = "text/html";
         res.keep_alive = false;
         return res;
     }
-	std::string path = config.root + "/" + config.index; // default path
-    // default headers & cookies
+
+    // DYNAMISCHER PATH-BUILD (besser als hardcoded Index)
+    std::string fullPath = locConfig.root;  // Starte mit Root
+    std::string decodedPath = urlDecode(req.path);  // Decode für Sicherheit
+    if (decodedPath.empty() || decodedPath == "/") {
+        fullPath += "/" + (locConfig.index.empty() ? "index.html" : locConfig.index);  // Fallback zu Index
+    } else {
+        fullPath += decodedPath;  // Nutze req.path
+    }
+
+    // Default-Headers
     setHeaders(res, req);
-    
+
 #ifdef DEBUG
-	printf("path: %s\n", path.c_str());
+    printf("Full path: %s\n", fullPath.c_str());
 #endif
 
-    // debug check allowed mehtods
+    // Debug: Allowed methods (mit locConfig)
     std::cout << "Allowed methods: ";
-    for (size_t i = 0; i < config.methods.size(); ++i)
-        std::cout << config.methods[i] << " ";
+    for (size_t i = 0; i < locConfig.methods.size(); ++i)
+        std::cout << locConfig.methods[i] << " ";
     std::cout << std::endl;
 
-	if (req.method == "GET" && config.methods.end() !=
-        std::find(config.methods.begin(), config.methods.end(), "GET"))
-	{
-		return methodGET(req, res, config);
-	}
-	else if (req.method == "POST" && config.methods.end() !=
-        std::find(config.methods.begin(), config.methods.end(), "POST"))
-	{
-		return methodPOST(req, res, config);
-	}
-	else if (req.method == "DELETE" && config.methods.end() !=
-        std::find(config.methods.begin(), config.methods.end(), "DELETE"))
-	{
-		return methodDELETE(req, res, config);
-	}
-	else
-	{
-		res.statusCode = 405;
-		res.reasonPhrase = getStatusMessage(405);
+    // Method-Dispatch (mit locConfig; find für Effizienz)
+    auto methodIt = std::find(locConfig.methods.begin(), locConfig.methods.end(), req.method);
+    if (req.method == "GET" && methodIt != locConfig.methods.end()) {
+        return methodGET(req, res, locConfig);
+    } else if (req.method == "POST" && methodIt != locConfig.methods.end()) {
+        return methodPOST(req, res, locConfig);
+    } else if (req.method == "DELETE" && methodIt != locConfig.methods.end()) {
+        return methodDELETE(req, res, locConfig);
+    } else {
+        res.statusCode = 405;
+        res.reasonPhrase = getStatusMessage(405);
         res.body = "<h1>405 Method Not Allowed</h1>";
-	}
+        res.headers["Content-Type"] = "text/html";  // Für Error
+        // Kein return hier – fällt durch zu Content-Length
+    }
 
-	res.headers ["Content-Length"] = std::to_string(res.body.size());
+    // Content-Length (TIPPFEHLER GEFIXT: Kein Space vor [)
+    res.headers["Content-Length"] = std::to_string(res.body.size());
 
 #ifdef DEBUG
-		std::cout << "method : " << req.method << std::endl;
-		std::cout << "path : " << path << std::endl;
-		std::cout << "body : " << req.body << std::endl;
-		std::cout << res.toString() << std::endl;
+    std::cout << "method : " << req.method << std::endl;
+    std::cout << "path : " << fullPath << std::endl;  // fullPath statt path
+    std::cout << "body : " << req.body << std::endl;
+    std::cout << res.toString() << std::endl;
 #endif
 
-	return res;
+    return res;
 }

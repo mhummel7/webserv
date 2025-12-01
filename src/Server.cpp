@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/27 11:56:26 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/01 14:45:11 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -470,8 +470,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                           << " path=" << req.path << std::endl;
                 #endif
 
-                // Ich gehe von deiner neuen Signatur aus: handleRequest(req, lc, sc)
-                Response res = handler.handleRequest(req, lc, sc);
+                // FIX: 4. Argument hinzugefügt – global_max_body aus g_cfg
+                Response res = handler.handleRequest(req, lc, sc, g_cfg.default_client_max_body_size);
 
                 c.keep_alive = res.keep_alive;
                 c.tx         = res.toString();

@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/26 11:32:40 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/01 14:34:20 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -105,7 +105,9 @@ void Config::parseLocationBlock(std::ifstream& file, int& lineNum,
 		else if (key == "allow_methods" && !params.empty()) currentLocation->methods = params;
 		else if (key == "cgi" && params.size() >= 2) currentLocation->cgi[params[0]] = params[1];
 		else if (key == "data_store" && !params.empty()) currentLocation->data_store = params[0];
+		else if (key == "client_max_body_size" && !params.empty()) currentLocation->client_max_body_size = parseSize(params[0]);
 		else throw std::runtime_error("Unknown directive: " + key);
+		std::cout << default_client_max_body_size << std::endl;
 	}
 }
 
@@ -198,17 +200,30 @@ void Config::parse_c(const std::string& filename) {
 				default_client_max_body_size = parseSize(params[0]);
 			else if (key == "data_dir" && !params.empty())
 				variables["data_dir"] = params[0];
+			// TODO: Add more global directives here if needed
 		}
 		else if (contextStack.back() == SERVER && currentServer) {
 			if (key == "listen" && !params.empty()) {
 				size_t colon = params[0].find(':');
-				currentServer->listen_host = (colon == std::string::npos) ? "0.0.0.0" : params[0].substr(0, colon);
-				currentServer->listen_port = std::atoi(params[0].substr(colon + 1).c_str());
+				if (colon == std::string::npos) {
+					currentServer->listen_host = "0.0.0.0";  // Minor fix: Handle no-port case better
+					currentServer->listen_port = std::atoi(params[0].c_str());  // Assume port if no :
+				} else {
+					currentServer->listen_host = params[0].substr(0, colon);
+					currentServer->listen_port = std::atoi(params[0].substr(colon + 1).c_str());
+				}
 			}
 			else if (key == "server_name" && !params.empty())
 				currentServer->server_name = params[0];
+			// ADD THIS: Server-level client_max_body_size override
+			else if (key == "client_max_body_size" && !params.empty()) {
+				currentServer->client_max_body_size = parseSize(params[0]);
+			}
+			// TODO: Add more server directives here (e.g., error_page per server)
 		}
 	}
+		// No else here—unknown directives in SERVER/LOCATION are handled elsewhere or ignored
+		// (but add a warning? e.g., std::cerr << "Warning: Unknown directive '" << key << "' in " << context << std::endl;)
 
 	resolveVariables();
 	// ────────────────────── VALIDIERUNG AM ENDE ──────────────────────

@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:26 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/17 11:27:46 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/01 14:27:28 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -53,6 +53,7 @@ struct LocationConfig {
 	std::string error_dir;      // z.B. "./errors"
 	std::string data_dir;       // z.B. "./data"
 	std::string data_store;     // z.B. "$(data_dir)/posts.json"
+	size_t client_max_body_size = 0;
 };
 
 // Struktur für Server-Konfiguration
@@ -62,7 +63,7 @@ struct ServerConfig {
 	std::string server_name;  // z.B. "localhost"
 	std::vector<LocationConfig> locations;
 	std::map<int, std::string> error_pages;  // Erbt von Global
-	size_t client_max_body_size;            // Erbt von Global
+	size_t client_max_body_size = 0;  // 0 = inherit from global
 };
 
 
