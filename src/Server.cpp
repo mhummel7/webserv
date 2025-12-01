@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/01 15:39:23 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/01 16:15:24 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -424,7 +424,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 			int port = port_by_listener_fd[fds[i].fd];  // Listener-Port (Client-FD hat denselben)
 			c.server_idx = 0;  // SAFE DEFAULT: Erster Server, falls alles failt
 			std::string host = req.headers["Host"];
-			bool found = false;
+			// bool found = false;
 			if (!host.empty() && servers_by_port.find(port) != servers_by_port.end() && !servers_by_port[port].empty()) {
 				// Clean Host (remove port, e.g. "example.com:8080" -> "example.com")
 				size_t colon_pos = host.find(':');
@@ -436,7 +436,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 				for (size_t idx : servers_by_port[port]) {
 					if (g_cfg.servers[idx].server_name == host) {
 						c.server_idx = idx;
-						found = true;
+						// found = true;
 						break;
 					}
 				}
