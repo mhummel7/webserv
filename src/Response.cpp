@@ -192,6 +192,7 @@ std::string ResponseHandler::getStatusMessage(int code)
 		case 200: return "OK";
 		case 404: return "Not Found";
 		case 405: return "Method not Allowed";
+        case 413: return "Payload too large";
 		default : return "Unkown";
 	}
 }
@@ -623,9 +624,8 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
     // 413-CHECK (jetzt mit hierarchischem maxBody)
     if (maxBody > 0 && req.content_len > maxBody) {
-        res.statusCode = 413;
-        res.reasonPhrase = "Payload Too Large";
-        res.body = "<h1>413 Payload Too Large</h1>";
+        res.reasonPhrase = getStatusMessage(413);
+        res = makeHtmlResponse(403, "<h1>403 Forbidden</h1>");
         res.headers["Content-Length"] = std::to_string(res.body.size());
         res.headers["Content-Type"] = "text/html";
         res.keep_alive = false;
