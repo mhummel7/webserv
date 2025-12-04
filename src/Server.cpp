@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/03 09:38:44 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/03 10:18:24 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -303,216 +303,213 @@ void Server::handleListenerEvent(size_t index, long now_ms)
 
 bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
 {
-    while (1)
+    ssize_t n = ::read(fds[i].fd, buf, buf_size);
+    // #ifdef DEBUG
+    // std::cout << "========= Read returned n=" << n << " buf=" << buf << " =========" << std::endl;
+    // #endif
+
+    if (n > 0)
     {
-        ssize_t n = ::read(fds[i].fd, buf, buf_size);
-        // #ifdef DEBUG
-        // std::cout << "========= Read returned n=" << n << " buf=" << buf << " =========" << std::endl;
-        // #endif
+        Client &c = clients[i];
+        c.last_active_ms = now_ms;
+        c.rx.append(buf, n);
 
-        if (n > 0)
-        {
-            Client &c = clients[i];
-            c.last_active_ms = now_ms;
-            c.rx.append(buf, n);
+        // Hard-Limit: zu viel Body im Buffer → 413
+        if (c.rx.size() > c.max_body_bytes + 8192) { // + etwas Toleranz für Header
+            ResponseHandler handler;
 
-            // Hard-Limit: zu viel Body im Buffer → 413
-           if (c.rx.size() > c.max_body_bytes + 8192) { // + etwas Toleranz für Header
-                ResponseHandler handler;
+            Response res = handler.makeHtmlResponse(413, "<h1>413 Payload Too Large</h1>");
+            res.keep_alive = false;          // Verbindung wird nach Antwort geschlossen
+            c.tx = res.toString();
 
-                Response res = handler.makeHtmlResponse(413, "<h1>413 Payload Too Large</h1>");
-                res.keep_alive = false;          // Verbindung wird nach Antwort geschlossen
-                c.tx = res.toString();
+            c.rx.clear();                    // Body verwerfen
+            fds[i].events &= ~POLLIN;        // nichts mehr lesen
+            fds[i].events |= POLLOUT;        // nur noch schreiben
 
-                c.rx.clear();                    // Body verwerfen
-                fds[i].events &= ~POLLIN;        // nichts mehr lesen
-                fds[i].events |= POLLOUT;        // nur noch schreiben
-
-                return true;
-            }
-
-
-            #ifdef DEBUG
-            std::cout << "----- c.rx ----\n" << c.rx << "\n----------------\n";
-            #endif
-
-            // 1) Header-Ende suchen
-            size_t headerEnd = c.rx.find("\r\n\r\n");
-            if (headerEnd == std::string::npos)
-                continue; // Header noch nicht komplett
-
-            std::string headers = c.rx.substr(0, headerEnd + 4);
-
-            // 2) Chunked oder Content-Length?
-            bool   isChunked     = false;
-            size_t contentLength = 0;
-
-            // Transfer-Encoding prüfen
-            {
-                size_t tePos = headers.find("Transfer-Encoding:");
-                if (tePos != std::string::npos)
-                {
-                    size_t lineEnd = headers.find("\r\n", tePos);
-                    std::string teLine = headers.substr(tePos, lineEnd - tePos);
-                    if (teLine.find("chunked") != std::string::npos)
-                        isChunked = true;
-                }
-            }
-
-            // Content-Length (nur wenn NICHT chunked)
-            if (!isChunked)
-            {
-                size_t clPos = headers.find("Content-Length:");
-                if (clPos != std::string::npos)
-                {
-                    clPos += std::string("Content-Length:").length();
-                    while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
-                        ++clPos;
-                    size_t clEnd = headers.find("\r\n", clPos);
-                    std::string clStr = headers.substr(clPos, clEnd - clPos);
-                    contentLength = std::atoi(clStr.c_str());
-                }
-            }
-
-            #ifdef DEBUG
-            std::cout << "[DEBUG] isChunked=" << isChunked
-                      << " CL=" << contentLength
-                      << " max=" << c.max_body_bytes << std::endl;
-            #endif
-
-            size_t totalNeeded = 0;
-
-            if (isChunked)
-            {
-                size_t bodyStart = headerEnd + 4;
-                // 3a) Chunked: auf Terminator \r\n0\r\n\r\n warten
-                size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
-                if (endMarker == std::string::npos)
-                {
-                    // noch nicht alles da
-                    continue;
-                }
-                // substring schließt das "\r\n0\r\n\r\n" mit ein (7 Zeichen)
-                totalNeeded = endMarker + 5;
-            }
-            else
-            {
-                // 3b) Non-chunked: Header + Content-Length
-                totalNeeded = headerEnd + 4 + contentLength;
-                if (c.rx.size() < totalNeeded)
-                {
-                    // noch nicht kompletter Body da
-                    continue;
-                }
-            }
-
-            // 4) Vollständigen Request-String extrahieren
-			std::string fullRequest = c.rx.substr(0, totalNeeded);
-
-			// 5) Parsen
-			Request req = RequestParser().parse(fullRequest);
-			#ifdef DEBUG
-			std::cout << "Parsed request: method=" << req.method
-					<< " path=" << req.path
-					<< " version=" << req.version
-					<< " content_len=" << req.content_len
-					<< " body.size()=" << req.body.size()
-					<< std::endl;
-			#endif
-
-			// NEU: Virtual Host Matching (sicher: Checks + Defaults)
-			int port = port_by_listener_fd[fds[i].fd];  // Listener-Port (Client-FD hat denselben)
-			c.server_idx = 0;  // SAFE DEFAULT: Erster Server, falls alles failt
-			std::string host = req.headers["Host"];
-			if (!host.empty() && servers_by_port.find(port) != servers_by_port.end() && !servers_by_port[port].empty()) {
-				// Clean Host (remove port, e.g. "example.com:8080" -> "example.com")
-				size_t colon_pos = host.find(':');
-				if (colon_pos != std::string::npos) {
-					host = host.substr(0, colon_pos);
-				}
-
-				// Suche Match in servers_by_port[port]
-				for (size_t idx : servers_by_port[port]) {
-					if (g_cfg.servers[idx].server_name == host) {
-						c.server_idx = idx;
-						break;
-					}
-				}
-			}
-
-			c.state  = RxState::READY;
-			c.target = req.path;
-
-			// Verbrauchte Bytes aus Buffer löschen (wichtig für Keep-Alive)
-			c.rx.erase(0, totalNeeded);
-
-			// Limits an finalen Server anpassen (sicher: c.server_idx gesetzt)
-			const ServerConfig& sc = g_cfg.servers[c.server_idx];
-			c.max_body_bytes = sc.client_max_body_size;
-
-			// 6) Location bestimmen (Longest Prefix Match) – Rest unverändert
-			auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
-			{
-				size_t best = 0, best_len = 0;
-				for (size_t j = 0; j < sc.locations.size(); ++j)
-				{
-					const std::string& p = sc.locations[j].path;
-					if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
-					{
-						best = j;
-						best_len = p.size();
-					}
-				}
-				if (best_len == 0)
-				{
-					for (size_t j = 0; j < sc.locations.size(); ++j)
-						if (sc.locations[j].path == "/") return sc.locations[j];
-					return sc.locations.front();
-				}
-				return sc.locations[best];
-			};
-
-			const LocationConfig& lc = resolve_location(sc, c.target);
-
-			#ifdef DEBUG
-			std::cout << "Resolved location: path=" << lc.path
-					<< " root=" << lc.root << std::endl;
-			#endif
-
-            // 7) Response generieren
-            if (c.state == RxState::READY && c.tx.empty())
-            {
-                req.conn_fd = fds[i].fd;
-
-                ResponseHandler handler;
-                #ifdef DEBUG
-                std::cout << "Dispatching to ResponseHandler: method=" << req.method
-                          << " path=" << req.path << std::endl;
-                #endif
-
-                // FIX: 4. Argument hinzugefügt – global_max_body aus g_cfg
-                Response res = handler.handleRequest(req, lc, sc, g_cfg.default_client_max_body_size);
-
-                c.keep_alive = res.keep_alive;
-                c.tx         = res.toString();
-                fds[i].events |= POLLOUT;
-            }
             return true;
         }
-        else if (n == 0)
+
+
+        #ifdef DEBUG
+        std::cout << "----- c.rx ----\n" << c.rx << "\n----------------\n";
+        #endif
+
+        // 1) Header-Ende suchen
+        size_t headerEnd = c.rx.find("\r\n\r\n");
+        if (headerEnd == std::string::npos)
+            return true;
+
+        std::string headers = c.rx.substr(0, headerEnd + 4);
+
+        // 2) Chunked oder Content-Length?
+        bool   isChunked     = false;
+        size_t contentLength = 0;
+
+        // Transfer-Encoding prüfen
         {
-            // Verbindung geschlossen
-            closeClient(i);
-            return false;
+            size_t tePos = headers.find("Transfer-Encoding:");
+            if (tePos != std::string::npos)
+            {
+                size_t lineEnd = headers.find("\r\n", tePos);
+                std::string teLine = headers.substr(tePos, lineEnd - tePos);
+                if (teLine.find("chunked") != std::string::npos)
+                    isChunked = true;
+            }
+        }
+
+        // Content-Length (nur wenn NICHT chunked)
+        if (!isChunked)
+        {
+            size_t clPos = headers.find("Content-Length:");
+            if (clPos != std::string::npos)
+            {
+                clPos += std::string("Content-Length:").length();
+                while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
+                    ++clPos;
+                size_t clEnd = headers.find("\r\n", clPos);
+                std::string clStr = headers.substr(clPos, clEnd - clPos);
+                contentLength = std::atoi(clStr.c_str());
+            }
+        }
+
+        #ifdef DEBUG
+        std::cout << "[DEBUG] isChunked=" << isChunked
+                    << " CL=" << contentLength
+                    << " max=" << c.max_body_bytes << std::endl;
+        #endif
+
+        size_t totalNeeded = 0;
+
+        if (isChunked)
+        {
+            size_t bodyStart = headerEnd + 4;
+            // 3a) Chunked: auf Terminator \r\n0\r\n\r\n warten
+            size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
+            if (endMarker == std::string::npos)
+            {
+                // noch nicht alles da
+                return true;
+            }
+            // substring schließt das "\r\n0\r\n\r\n" mit ein (7 Zeichen)
+            totalNeeded = endMarker + 5;
         }
         else
         {
-            if (errno == EAGAIN || errno == EWOULDBLOCK)
-                return true; // momentan alles gelesen
-            perror("read");
-            closeClient(i);
-            return false;
+            // 3b) Non-chunked: Header + Content-Length
+            totalNeeded = headerEnd + 4 + contentLength;
+            if (c.rx.size() < totalNeeded)
+            {
+                // noch nicht kompletter Body da
+                return true;
+            }
         }
+
+        // 4) Vollständigen Request-String extrahieren
+        std::string fullRequest = c.rx.substr(0, totalNeeded);
+
+        // 5) Parsen
+        Request req = RequestParser().parse(fullRequest);
+        #ifdef DEBUG
+        std::cout << "Parsed request: method=" << req.method
+                << " path=" << req.path
+                << " version=" << req.version
+                << " content_len=" << req.content_len
+                << " body.size()=" << req.body.size()
+                << std::endl;
+        #endif
+
+        // NEU: Virtual Host Matching (sicher: Checks + Defaults)
+        int port = c.listen_port;   // <- das ist der richtige Port des Clients
+        c.server_idx = 0;  // SAFE DEFAULT: Erster Server, falls alles failt
+        std::string host = req.headers["Host"];
+        if (!host.empty() && servers_by_port.find(port) != servers_by_port.end() && !servers_by_port[port].empty()) {
+            // Clean Host (remove port, e.g. "example.com:8080" -> "example.com")
+            size_t colon_pos = host.find(':');
+            if (colon_pos != std::string::npos) {
+                host = host.substr(0, colon_pos);
+            }
+
+            // Suche Match in servers_by_port[port]
+            for (size_t idx : servers_by_port[port]) {
+                if (g_cfg.servers[idx].server_name == host) {
+                    c.server_idx = idx;
+                    break;
+                }
+            }
+        }
+
+        c.state  = RxState::READY;
+        c.target = req.path;
+
+        // Verbrauchte Bytes aus Buffer löschen (wichtig für Keep-Alive)
+        c.rx.erase(0, totalNeeded);
+
+        // Limits an finalen Server anpassen (sicher: c.server_idx gesetzt)
+        const ServerConfig& sc = g_cfg.servers[c.server_idx];
+        c.max_body_bytes = sc.client_max_body_size;
+
+        // 6) Location bestimmen (Longest Prefix Match) – Rest unverändert
+        auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
+        {
+            size_t best = 0, best_len = 0;
+            for (size_t j = 0; j < sc.locations.size(); ++j)
+            {
+                const std::string& p = sc.locations[j].path;
+                if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
+                {
+                    best = j;
+                    best_len = p.size();
+                }
+            }
+            if (best_len == 0)
+            {
+                for (size_t j = 0; j < sc.locations.size(); ++j)
+                    if (sc.locations[j].path == "/") return sc.locations[j];
+                return sc.locations.front();
+            }
+            return sc.locations[best];
+        };
+
+        const LocationConfig& lc = resolve_location(sc, c.target);
+
+        #ifdef DEBUG
+        std::cout << "Resolved location: path=" << lc.path
+                << " root=" << lc.root << std::endl;
+        #endif
+
+        // 7) Response generieren
+        if (c.state == RxState::READY && c.tx.empty())
+        {
+            req.conn_fd = fds[i].fd;
+
+            ResponseHandler handler;
+            #ifdef DEBUG
+            std::cout << "Dispatching to ResponseHandler: method=" << req.method
+                        << " path=" << req.path << std::endl;
+            #endif
+
+            // FIX: 4. Argument hinzugefügt – global_max_body aus g_cfg
+            Response res = handler.handleRequest(req, lc, sc, g_cfg.default_client_max_body_size);
+
+            c.keep_alive = res.keep_alive;
+            c.tx         = res.toString();
+            fds[i].events |= POLLOUT;
+        }
+        return true;
+    }
+    else if (n == 0)
+    {
+        // Verbindung geschlossen
+        closeClient(i);
+        return false;
+    }
+    else
+    {
+        if (errno == EAGAIN || errno == EWOULDBLOCK)
+            return true; // momentan alles gelesen
+        perror("read");
+        closeClient(i);
+        return false;
     }
 }
 
@@ -520,29 +517,38 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 bool Server::handleClientWrite(size_t &i, long now_ms)
 {
     Client &c = clients[i];
-    while (!c.tx.empty())
-    {
-        ssize_t m = write(fds[i].fd, c.tx.data(), c.tx.size());
-        if (m > 0)
-        {
-            c.tx.erase(0, m);
-            c.last_active_ms = now_ms;
-            continue;
-        }
-        if (m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
-            break;
-        if (m < 0)
-        {
-            perror("write");
-            return false;
-        }
-    }
+
     if (c.tx.empty())
+        return true;
+
+    ssize_t m = write(fds[i].fd, c.tx.data(), c.tx.size());
+
+    if (m > 0)
+    {
+        c.tx.erase(0, m);
+        c.last_active_ms = now_ms;
+    }
+    else if (m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        return true;
+    else if (m < 0)
+    {
+        perror("write");
+        closeClient(i);
+        return false;
+    }
+    else 
+    { // m == 0
+        // Sehr ungewöhnlich, aber sauber behandeln – am besten Verbindung schließen
+        closeClient(i);
+        return false;
+    }
+
+    if (c.tx.empty()) 
     {
         if (c.keep_alive)
         {
             reset_for_next_request(c);
-            fds[i].events &= ~POLLOUT;          // zurück auf nur lesen
+            fds[i].events &= ~POLLOUT;  // nur noch lesen
             return true;
         }
         else
@@ -551,6 +557,7 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
             return false;
         }
     }
+
     return true;
 }
 
