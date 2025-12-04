@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/03 10:18:24 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/04 10:43:33 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -408,7 +408,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         std::string fullRequest = c.rx.substr(0, totalNeeded);
 
         // 5) Parsen
-        Request req = RequestParser().parse(fullRequest);
+        Request req = RequestParser().parse(fullRequest, lc, sc);
         #ifdef DEBUG
         std::cout << "Parsed request: method=" << req.method
                 << " path=" << req.path
@@ -489,7 +489,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             #endif
 
             // FIX: 4. Argument hinzugefügt – global_max_body aus g_cfg
-            Response res = handler.handleRequest(req, lc, sc, g_cfg.default_client_max_body_size);
+            Response res = handler.handleRequest(req, lc, sc);
 
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
