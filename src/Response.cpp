@@ -581,56 +581,23 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
 }
 
 Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig,
-                                        const ServerConfig& serverConfig, size_t global_max_body)
+                                        const ServerConfig& serverConfig)
 {
+   if (req.error != 0) {
+        Response res;
+        res.statusCode = req.error;
+        res.reasonPhrase = getStatusMessage(req.error);
+
+        res.body = "<h1>" + std::to_string(req.error) + " Payload too large </h1>";
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        res.keep_alive = false;
+
+        return res;
+    }
+
     Response res;
     res.keep_alive = req.keep_alive;
-
-    // HIERARCHISCHE MAX-BODY-BERECHNUNG: location > server > global
-    size_t maxBody = global_max_body;  // Global-Fallback (z.B. 10M aus Config)
-    if (locConfig.client_max_body_size > 0) {
-        maxBody = locConfig.client_max_body_size;  // Location-Override (z.B. 100 für /post_body)
-    } else if (serverConfig.client_max_body_size > 0) {
-        maxBody = serverConfig.client_max_body_size;  // Server-Override
-    }
-
-    // Dein X-Block-Check (behältst du? – triggert immer 413, unabh. von maxBody)
-    if (req.headers.count("X-Block-Large-Post")) {
-        res.statusCode = 413;
-        res.reasonPhrase = "Payload Too Large";
-        res.body = "<h1>413 – Too big for .bla</h1>";
-        res.headers["Content-Type"] = "text/html";
-        res.headers["Content-Length"] = std::to_string(res.body.size());
-        return res;
-    }
-
-    // DEBUG-AUSGABE (angepasst: verwendet locConfig und lokale Vars)
-#ifdef DEBUG
-    std::cout << "[DEBUG] Request-Info für Path '" << req.path << "':" << std::endl;
-    std::cout << "  - Method: " << req.method << std::endl;
-    std::cout << "  - Content-Length: " << req.content_len << " Bytes" << std::endl;
-    std::cout << "  - Body-Größe (tatsächl.): " << req.body.size() << " Bytes" << std::endl;
-    std::cout << "  - Effektives maxBody-Limit: " << maxBody << " Bytes" << std::endl;
-    std::cout << "  - Location-Limit: " << locConfig.client_max_body_size << " Bytes (0 = keins)" << std::endl;
-    std::cout << "  - Server-Limit: " << serverConfig.client_max_body_size << " Bytes (0 = keins)" << std::endl;
-    std::cout << "  - Global-Limit: " << global_max_body << " Bytes" << std::endl;
-    if (req.content_len > maxBody) {
-        std::cout << "  -> **413 TRIGGER: Body zu groß! Erhöhe Limit oder verkleinere File.**" << std::endl;
-    } else {
-        std::cout << "  -> OK: Body passt." << std::endl;
-    }
-    std::cout << "----------------------------------------" << std::endl;
-#endif
-
-    // 413-CHECK (jetzt mit hierarchischem maxBody)
-    if (maxBody > 0 && req.content_len > maxBody) {
-        res.reasonPhrase = getStatusMessage(413);
-        res = makeHtmlResponse(403, "<h1>403 Forbidden</h1>");
-        res.headers["Content-Length"] = std::to_string(res.body.size());
-        res.headers["Content-Type"] = "text/html";
-        res.keep_alive = false;
-        return res;
-    }
 
     // DYNAMISCHER PATH-BUILD (besser als hardcoded Index)
     std::string fullPath = locConfig.root;  // Starte mit Root

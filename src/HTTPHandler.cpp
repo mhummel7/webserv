@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   HTTPHandler.cpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/27 11:04:05 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/03 10:26:52 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -83,20 +83,24 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out, std::strin
     return false;
 }
 
-Request RequestParser::parse(const std::string& rawRequest)
+Request RequestParser::parse(const std::string& rawRequest, const LocationConfig& locationConfig, const ServerConfig& serverConfig)
 {
     Request req;
     std::istringstream stream(rawRequest);
     std::string line;
 
-    // Request-Line
+    // ------------------------------------------------------
+    // REQUEST LINE
+    // ------------------------------------------------------
     if (!std::getline(stream, line))
         return req; // empty request
     if (!line.empty() && line.back() == '\r')
         line.pop_back();
     parseRequestLine(line, req);
 
-    // Header
+    // ------------------------------------------------------
+    // HEADERS
+    // ------------------------------------------------------
     while (std::getline(stream, line))
     {
         if (!line.empty() && line.back() == '\r')
@@ -106,17 +110,17 @@ Request RequestParser::parse(const std::string& rawRequest)
         parseHeaderLine(line, req);
     }
 
-    // Connection / keep-alive logic
+    // Connection handling
     if (req.version == "HTTP/1.1")
         req.keep_alive = !(req.headers.count("Connection")
                            && req.headers["Connection"] == "close");
     else if (req.version == "HTTP/1.0")
         req.keep_alive = (req.headers.count("Connection")
                           && req.headers["Connection"] == "keep-alive");
-    else
-        std::cerr << "Invalid HTTP version" << std::endl;
 
-    // ===== Transfer-Encoding / Content-Length aus den Headern lesen =====
+    // ------------------------------------------------------
+    // READ BODY SIZE HEADERS
+    // ------------------------------------------------------
     if (req.headers.count("Transfer-Encoding")
         && req.headers["Transfer-Encoding"] == "chunked")
     {
@@ -126,13 +130,14 @@ Request RequestParser::parse(const std::string& rawRequest)
     {
         try {
             req.content_len = std::stoul(req.headers["Content-Length"]);
-        } catch (const std::exception& e) {
-            std::cerr << "Invalid Content-Length: " << e.what() << std::endl;
+        } catch (...) {
             req.content_len = 0;
         }
     }
 
-    // ===== Body einlesen =====
+    // ------------------------------------------------------
+    // READ BODY (chunked or normal)
+    // ------------------------------------------------------
     if (req.is_chunked)
     {
         std::string err;
@@ -144,7 +149,6 @@ Request RequestParser::parse(const std::string& rawRequest)
         }
         else
         {
-            // WICHTIG: jetzt kennen wir die tatsächliche Länge
             req.content_len = req.body.size();
         }
     }
@@ -153,22 +157,33 @@ Request RequestParser::parse(const std::string& rawRequest)
         std::string body;
         body.resize(req.content_len);
         stream.read(&body[0], req.content_len);
-        std::streamsize actuallyRead = stream.gcount();
-        body.resize(static_cast<size_t>(actuallyRead));
+        body.resize(static_cast<size_t>(stream.gcount()));
         req.body = body;
     }
     else
     {
-        // Kein CL, kein chunked → Rest als Body lesen
         std::string rest;
         std::getline(stream, rest, '\0');
         req.body = rest;
         req.content_len = req.body.size();
     }
 
+    // ------------------------------------------------------
+    //  MAX BODY SIZE CHECK (LOCATION > SERVER)
+    // ------------------------------------------------------
+    const size_t maxBody =
+        (locationConfig.client_max_body_size > 0)
+        ? locationConfig.client_max_body_size
+        : serverConfig.client_max_body_size;
+
+    if (maxBody > 0 && req.content_len > maxBody)
+    {
+        req.error = 413;            // Payload Too Large
+        return req;                // Handler erstellt danach Error-Response
+    }
+
     return req;
 }
-
 
 static inline std::string trim(const std::string& s)
 {

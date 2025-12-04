@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:24 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/12 11:52:09 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/03 10:26:24 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -25,6 +25,7 @@ struct Request
 	
 	// Request-Daten
 	bool is_chunked = false;
+	int error = 0;
 	size_t content_len = 0;
 	std::string method;
 	std::string path;
@@ -41,7 +42,8 @@ class RequestParser
 		RequestParser();
 		~RequestParser();
 
-		Request parse(const std::string& rawRequest);
+		Request parse(const std::string& rawRequest, const LocationConfig & config, const ServerConfig & serverConfig);
+
 
 	private:
 		void parseRequestLine(const std::string& line, Request& req);

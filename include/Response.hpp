@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Response.hpp                                       :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/01 14:42:51 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/03 10:31:07 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -38,7 +38,7 @@ class ResponseHandler
 		~ResponseHandler();
 
 		Response handleRequest(const Request& req, const LocationConfig& locConfig,
-                               const ServerConfig& serverConfig, size_t global_max_body);
+                               const ServerConfig& serverConfig);
 		Response makeHtmlResponse(int status, const std::string& body);
 
 	private:
@@ -52,7 +52,7 @@ class ResponseHandler
                                    const LocationConfig& config, Response& res);
 		bool handleFileOrCgi(const Request& req, const std::string& fsPath,
                             const LocationConfig& config, Response& res);
-
+		void validateBodySize(const LocationConfig& locConfig, const ServerConfig& serverConfig);
 	};
 
 #endif
