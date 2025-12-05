@@ -543,27 +543,63 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 
 Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const LocationConfig& config)
 {
-	std::string dir = config.data_dir.empty() ? "./data" : config.data_dir;
-	std::string filepath = "root/" + dir;
-	filepath += "/" + req.body;
-
-	#ifdef DEBUG
-	std::cout << "DELETE path: " << filepath << std::endl;
-	#endif
-
-	if (fileExists(filepath) && std::remove(filepath.c_str()) == 0)
-	{
-		res.statusCode = 200;
-		res.reasonPhrase = getStatusMessage(200);
-		res.body = "<h1>File deleted successfully.</h1>";
-	}
-	else
-	{
-		res.statusCode = 404;
-		res.reasonPhrase = getStatusMessage(404);
-		res.body = "<h1>404 File not found.</h1>";
-	}
-	return res;
+    #ifdef DEBUG
+    std::cout << "[DELETE] Request body: '" << req.body << "'" << std::endl;
+    std::cout << "[DELETE] Request path: " << req.path << std::endl;
+    std::cout << "[DELETE] Config root: " << config.root << std::endl;
+    #endif
+    
+    // 1. Dateiname aus dem Body extrahieren (Whitespace entfernen!)
+    std::string filename = req.body;
+    
+    // Entferne Newlines und Whitespace vom Ende
+    while (!filename.empty() && (filename.back() == '\r' || filename.back() == '\n' || 
+           filename.back() == ' ' || filename.back() == '\t')) {
+        filename.pop_back();
+    }
+    
+    // 2. Sicherheitsprüfung
+    if (filename.empty()) {
+        res = makeHtmlResponse(400, "<h1>400 Bad Request - No filename specified</h1>");
+        return res;
+    }
+    
+    if (containsPathTraversal(filename) || filename.find('/') != std::string::npos) {
+        res = makeHtmlResponse(403, "<h1>403 Forbidden - Invalid filename</h1>");
+        return res;
+    }
+    
+    // 3. Dateipfad erstellen
+    std::string baseDir;
+    if (!config.data_dir.empty()) {
+        baseDir = config.data_dir;
+    } else if (!config.root.empty()) {
+        baseDir = config.root;
+    } else {
+        baseDir = "./root/data";
+    }
+    
+    // Sicherstellen, dass baseDir mit / endet
+    if (!baseDir.empty() && baseDir.back() != '/') {
+        baseDir += "/";
+    }
+    
+    std::string filepath = baseDir + filename;
+    
+    #ifdef DEBUG
+    std::cout << "[DELETE] Full path: " << filepath << std::endl;
+    #endif
+    
+    if (fileExists(filepath) && std::remove(filepath.c_str()) == 0) {
+        res.statusCode = 200;
+        res.reasonPhrase = getStatusMessage(200);
+        res.body = "<h1>File '" + filename + "' deleted successfully.</h1>";
+    } else {
+        res.statusCode = 404;
+        res.reasonPhrase = getStatusMessage(404);
+        res.body = "<h1>404 File '" + filename + "' not found.</h1>";
+    }
+    return res;
 }
 
 Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig)

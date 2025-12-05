@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/05 13:18:56 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/05 14:11:40 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -294,23 +294,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         c.last_active_ms = now_ms;
         c.rx.append(buf, n);
 
-        // 0) Connection-Level Hard-Limit
-        if (c.rx.size() > c.max_body_bytes + 8192) {
-            ResponseHandler handler;
-            Response res = handler.makeHtmlResponse(413, "<h1>413 Payload Too Large</h1>");
-            res.keep_alive = false;
-            c.tx = res.toString();
-
-            c.rx.clear();
-            fds[i].events &= ~POLLIN;
-            fds[i].events |= POLLOUT;
-            return true;
-        }
-
-        #ifdef DEBUG
-        std::cout << "----- c.rx ----\n" << c.rx << "\n----------------\n";
-        #endif
-
         // 1) Header-Ende suchen
         size_t headerEnd = c.rx.find("\r\n\r\n");
         if (headerEnd == std::string::npos)
@@ -318,7 +301,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 
         std::string headers = c.rx.substr(0, headerEnd + 4);
 
-        // 2) Kopf (Request Line + Header) parsen – OHNE Config
+        // 2) Kopf (Request Line + Header) parsen
         RequestParser parser;
         Request req;
         if (!parser.parseHeaders(headers, req))
@@ -333,7 +316,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 
         // 3) vHost bestimmen
         int port = c.listen_port;
-        size_t server_idx = servers_by_port[port].front(); // Default
+        size_t server_idx = servers_by_port[port].front();
         std::string host = req.headers["Host"];
 
         if (!host.empty() && servers_by_port.count(port))
@@ -352,62 +335,73 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         c.server_idx = server_idx;
         const ServerConfig& sc = g_cfg.servers[server_idx];
 
-        // 4) Location über req.path bestimmen
+        // 4) Location bestimmen
         const LocationConfig& lc = resolve_location(sc, req.path);
 
-        // 5) maxBody bestimmen (Location > Server > global default)
-        size_t maxBody =
-            (lc.client_max_body_size > 0) ? lc.client_max_body_size :
-            (sc.client_max_body_size > 0) ? sc.client_max_body_size :
-            g_cfg.default_client_max_body_size;
-
-        // 6) Für nicht-chunked Requests: CL vs maxBody früh prüfen
-        if (!req.is_chunked && maxBody > 0 && req.content_len > maxBody)
-        {
-            req.error = 413;
+        // 5. Early Check für Content-Length (falls nicht chunked)
+        bool isChunked = req.headers.count("Transfer-Encoding") && 
+                        req.headers["Transfer-Encoding"] == "chunked";
+        
+        size_t contentLength = 0;
+        if (!isChunked && req.headers.count("Content-Length")) {
+            try {
+                contentLength = std::stoul(req.headers["Content-Length"]);
+            } catch (...) {}
+            
+            // Größenprüfung mit Location/Server-Konfiguration
+            size_t maxBody = (lc.client_max_body_size > 0)
+                            ? lc.client_max_body_size
+                            : sc.client_max_body_size;
+            
+            if (maxBody > 0 && contentLength > maxBody) {
+                req.error = 413;
+            }
         }
 
-        // 7) Prüfen, ob kompletter Body schon im Buffer ist
-        size_t totalNeeded = 0;
-        size_t bodyStart   = headerEnd + 4;
-
-        if (req.is_chunked)
-        {
-            // Auf Terminator "0\r\n\r\n" warten
+        // 6) Gesamten Request-Body warten
+        size_t totalNeeded = headerEnd + 4; // Header + Leerzeile
+        size_t bodyStart = headerEnd + 4;
+        
+        if (isChunked) {
             size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
             if (endMarker == std::string::npos)
-                return true;  // noch nicht komplett
-
-            // Bis inkl. "0\r\n\r\n"
-            totalNeeded = endMarker + 5;
-        }
-        else
-        {
-            totalNeeded = headerEnd + 4 + req.content_len;
+                return true; // Chunked Body noch nicht komplett
+            totalNeeded = endMarker + 5; // inkl. "0\r\n\r\n"
+        } else {
+            totalNeeded += contentLength;
             if (c.rx.size() < totalNeeded)
-                return true;  // Body noch nicht komplett da
+                return true; // Body noch nicht komplett da
         }
 
-        // 8) Jetzt haben wir Header + kompletten Body im Buffer
+        // 7) Vollständigen Request parsen (inkl. Body)
         std::string fullRequest = c.rx.substr(0, totalNeeded);
-        std::istringstream bodyStream(fullRequest.substr(bodyStart));
-
-        int parseError = 0;
-        parser.parseBody(bodyStream, req, lc, sc);
-
-        if (parseError == 413)
-            req.error = 413;
+        std::istringstream stream(fullRequest);
+        
+        // Skip Headers (bereits geparst)
+        std::string line;
+        while (std::getline(stream, line)) {
+            if (!line.empty() && line.back() == '\r')
+                line.pop_back();
+            if (line.empty())
+                break;
+        }
+        
+        // 8. Body mit den neuen Parser-Funktionen parsen
+        if (!parser.parseBody(stream, req, lc, sc)) {
+            // Fehler beim Body-Parsing (413 oder 400)
+            // req.error ist bereits gesetzt
+        }
+        
+        #ifdef DEBUG
+        std::cout << "[SERVER] Parsed request body: '" << req.body << "'" << std::endl;
+        std::cout << "[SERVER] Body size: " << req.body.size() << std::endl;
+        #endif
 
         c.state  = RxState::READY;
         c.target = req.path;
 
-        // Verbrauchte Bytes entfernen (Keep-Alive!)
+        // Verbrauchte Bytes entfernen
         c.rx.erase(0, totalNeeded);
-
-        #ifdef DEBUG
-        std::cout << "Resolved location: path=" << lc.path
-                  << " root=" << lc.root << std::endl;
-        #endif
 
         // 9) Response generieren
         if (c.state == RxState::READY && c.tx.empty())
@@ -415,11 +409,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             req.conn_fd = fds[i].fd;
 
             ResponseHandler handler;
-            #ifdef DEBUG
-            std::cout << "Dispatching to ResponseHandler: method=" << req.method
-                      << " path=" << req.path << std::endl;
-            #endif
-
             Response res = handler.handleRequest(req, lc);
 
             c.keep_alive = res.keep_alive;
