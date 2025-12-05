@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/05 12:29:39 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/05 13:00:57 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -183,44 +183,6 @@ void Server::loadConfig(int argc, char* argv[])
 	std::cout << "Built-in default server activated on 127.0.0.1:8080\n";
 }
 
-// void Server::loadConfig(int argc, char* argv[])
-// {
-//     // === 1. AUTOMATISCHER CONFIG-PFAD ===
-//     const char* cfg_path = "./config/webserv.conf";
-//     if (argc > 1) {
-//         cfg_path = argv[1];  // Optional: ./webserv my.conf
-//     }
-
-//     // === 2. CONFIG LADEN MIT FALLBACK ===
-//     try
-//     {
-//         g_cfg.parse_c(cfg_path);
-//         std::cout << "Config geladen: " << cfg_path << "\n";
-//     }
-//     catch (const std::exception& e)
-//     {
-//         std::cerr << "Config-Fehler (" << cfg_path << "): " << e.what() << "\n";
-//         std::cerr << "→ Starte mit Default-Server auf 127.0.0.1:8080\n";
-
-//         // --- DEFAULT-SERVER MANUELL ANLEGEN ---
-//         ServerConfig defaultServer;
-//         defaultServer.listen_host = "127.0.0.1";
-//         defaultServer.listen_port = 8080;
-//         defaultServer.server_name = "default";
-//         defaultServer.client_max_body_size = 1048576;  // 1MB
-
-//         LocationConfig defaultLoc;
-//         defaultLoc.path = "/";
-//         defaultLoc.root = "./root/html";
-//         defaultLoc.index = "index.html";
-//         defaultLoc.autoindex = true;
-//         defaultLoc.methods = {"GET", "POST", "DELETE"};
-
-//         defaultServer.locations.push_back(defaultLoc);
-//         g_cfg.servers.push_back(defaultServer);
-//     }
-// }
-
 void Server::setupListeners()
 {
     // === 4. LISTENER AUS CONFIG STARTEN ===
@@ -301,182 +263,146 @@ void Server::handleListenerEvent(size_t index, long now_ms)
     }
 }
 
+static const LocationConfig& resolve_location(const ServerConfig& sc, const std::string& path)
+{
+    size_t best = 0, best_len = 0;
+    for (size_t j = 0; j < sc.locations.size(); ++j)
+    {
+        const std::string& p = sc.locations[j].path;
+        if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
+        {
+            best = j;
+            best_len = p.size();
+        }
+    }
+    if (best_len == 0)
+    {
+        for (size_t j = 0; j < sc.locations.size(); ++j)
+            if (sc.locations[j].path == "/") return sc.locations[j];
+        return sc.locations.front();
+    }
+    return sc.locations[best];
+};
+
 bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
 {
     ssize_t n = ::read(fds[i].fd, buf, buf_size);
-    // #ifdef DEBUG
-    // std::cout << "========= Read returned n=" << n << " buf=" << buf << " =========" << std::endl;
-    // #endif
-    
+
     if (n > 0)
     {
         Client &c = clients[i];
         c.last_active_ms = now_ms;
         c.rx.append(buf, n);
-        
-        // Hard-Limit: zu viel Body im Buffer → 413
-        if (c.rx.size() > c.max_body_bytes + 8192) { // + etwas Toleranz für Header
+
+        // 0) Connection-Level Hard-Limit
+        if (c.rx.size() > c.max_body_bytes + 8192) {
             ResponseHandler handler;
-            
             Response res = handler.makeHtmlResponse(413, "<h1>413 Payload Too Large</h1>");
-            res.keep_alive = false;          // Verbindung wird nach Antwort geschlossen
+            res.keep_alive = false;
             c.tx = res.toString();
-            
-            c.rx.clear();                    // Body verwerfen
-            fds[i].events &= ~POLLIN;        // nichts mehr lesen
-            fds[i].events |= POLLOUT;        // nur noch schreiben
-            
+
+            c.rx.clear();
+            fds[i].events &= ~POLLIN;
+            fds[i].events |= POLLOUT;
             return true;
         }
-        
-        
+
         #ifdef DEBUG
         std::cout << "----- c.rx ----\n" << c.rx << "\n----------------\n";
         #endif
-        
+
         // 1) Header-Ende suchen
         size_t headerEnd = c.rx.find("\r\n\r\n");
         if (headerEnd == std::string::npos)
-        return true;
-        
-        std::string headers = c.rx.substr(0, headerEnd + 4);
-        
-        // 2) Chunked oder Content-Length?
-        bool   isChunked     = false;
-        size_t contentLength = 0;
-        
-        // Transfer-Encoding prüfen
-        {
-            size_t tePos = headers.find("Transfer-Encoding:");
-            if (tePos != std::string::npos)
-            {
-                size_t lineEnd = headers.find("\r\n", tePos);
-                std::string teLine = headers.substr(tePos, lineEnd - tePos);
-                if (teLine.find("chunked") != std::string::npos)
-                    isChunked = true;
-                }
-        }
-        
-        // Content-Length (nur wenn NICHT chunked)
-        if (!isChunked)
-        {
-            size_t clPos = headers.find("Content-Length:");
-            if (clPos != std::string::npos)
-            {
-                clPos += std::string("Content-Length:").length();
-                while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
-                ++clPos;
-                size_t clEnd = headers.find("\r\n", clPos);
-                std::string clStr = headers.substr(clPos, clEnd - clPos);
-                contentLength = std::atoi(clStr.c_str());
-            }
-        }
+            return true; // Header noch nicht vollständig
 
-        #ifdef DEBUG
-        std::cout << "[DEBUG] isChunked=" << isChunked
-        << " CL=" << contentLength
-        << " max=" << c.max_body_bytes << std::endl;
-        #endif
-        
-        size_t totalNeeded = 0;
-        
-        if (isChunked)
-        {
-            size_t bodyStart = headerEnd + 4;
-            // 3a) Chunked: auf Terminator \r\n0\r\n\r\n warten
-            size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
-            if (endMarker == std::string::npos)
-            {
-                // noch nicht alles da
-                return true;
-            }
-            // substring schließt das "\r\n0\r\n\r\n" mit ein (7 Zeichen)
-            totalNeeded = endMarker + 5;
-        }
-        else
-        {
-            // 3b) Non-chunked: Header + Content-Length
-            totalNeeded = headerEnd + 4 + contentLength;
-            if (c.rx.size() < totalNeeded)
-            {
-                // noch nicht kompletter Body da
-                return true;
-            }
-        }
-        
-        // Limits an finalen Server anpassen (sicher: c.server_idx gesetzt)
-        const ServerConfig& sc = g_cfg.servers[c.server_idx];
-        
-        // 6) Location bestimmen (Longest Prefix Match) – Rest unverändert
-        auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
-        {
-            size_t best = 0, best_len = 0;
-            for (size_t j = 0; j < sc.locations.size(); ++j)
-            {
-                const std::string& p = sc.locations[j].path;
-                if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
-                {
-                    best = j;
-                    best_len = p.size();
-                }
-            }
-            if (best_len == 0)
-            {
-                for (size_t j = 0; j < sc.locations.size(); ++j)
-                    if (sc.locations[j].path == "/") return sc.locations[j];
-                return sc.locations.front();
-            }
-            return sc.locations[best];
-        };
-        const LocationConfig& lc = resolve_location(sc, "/");
-            // 4) Vollständigen Request-String extrahieren
-        std::string fullRequest = c.rx.substr(0, totalNeeded);
-            
-            // 5) Parsen
-        Request req = RequestParser().parse(fullRequest, lc, sc);
-        #ifdef DEBUG
-        std::cout << "Parsed request: method=" << req.method
-                << " path=" << req.path
-                << " version=" << req.version
-                << " content_len=" << req.content_len
-                << " body.size()=" << req.body.size()
-                << std::endl;
-        #endif
+        std::string rawHead = c.rx.substr(0, headerEnd + 4);
 
-        // NEU: Virtual Host Matching (sicher: Checks + Defaults)
-        int port = c.listen_port;   // <- das ist der richtige Port des Clients
-        c.server_idx = 0;  // SAFE DEFAULT: Erster Server, falls alles failt
+        // 2) Kopf (Request Line + Header) parsen – OHNE Config
+        RequestParser parser;
+        Request req = parser.parseHead(rawHead);
+        // -> req.method, req.path, req.version, req.headers,
+        //    req.is_chunked, req.content_len, req.keep_alive sind gesetzt
+
+        // 3) vHost bestimmen
+        int port = c.listen_port;
+        size_t server_idx = servers_by_port[port].front(); // Default
         std::string host = req.headers["Host"];
-        if (!host.empty() && servers_by_port.find(port) != servers_by_port.end() && !servers_by_port[port].empty()) {
-            // Clean Host (remove port, e.g. "example.com:8080" -> "example.com")
-            size_t colon_pos = host.find(':');
-            if (colon_pos != std::string::npos) {
-                host = host.substr(0, colon_pos);
-            }
 
-            // Suche Match in servers_by_port[port]
+        if (!host.empty() && servers_by_port.count(port))
+        {
+            size_t colon = host.find(':');
+            if (colon != std::string::npos) host = host.substr(0, colon);
+
             for (size_t idx : servers_by_port[port]) {
                 if (g_cfg.servers[idx].server_name == host) {
-                    c.server_idx = idx;
+                    server_idx = idx;
                     break;
                 }
             }
         }
 
+        c.server_idx = server_idx;
+        const ServerConfig& sc = g_cfg.servers[server_idx];
+
+        // 4) Location über req.path bestimmen
+        const LocationConfig& lc = resolve_location(sc, req.path);
+
+        // 5) maxBody bestimmen (Location > Server > global default)
+        size_t maxBody =
+            (lc.client_max_body_size > 0) ? lc.client_max_body_size :
+            (sc.client_max_body_size > 0) ? sc.client_max_body_size :
+            g_cfg.default_client_max_body_size;
+
+        // 6) Für nicht-chunked Requests: CL vs maxBody früh prüfen
+        if (!req.is_chunked && maxBody > 0 && req.content_len > maxBody)
+        {
+            req.error = 413;
+        }
+
+        // 7) Prüfen, ob kompletter Body schon im Buffer ist
+        size_t totalNeeded = 0;
+        size_t bodyStart   = headerEnd + 4;
+
+        if (req.is_chunked)
+        {
+            // Auf Terminator "0\r\n\r\n" warten
+            size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
+            if (endMarker == std::string::npos)
+                return true;  // noch nicht komplett
+
+            // Bis inkl. "0\r\n\r\n"
+            totalNeeded = endMarker + 5;
+        }
+        else
+        {
+            totalNeeded = headerEnd + 4 + req.content_len;
+            if (c.rx.size() < totalNeeded)
+                return true;  // Body noch nicht komplett da
+        }
+
+        // 8) Jetzt haben wir Header + kompletten Body im Buffer
+        std::string fullRequest = c.rx.substr(0, totalNeeded);
+        std::istringstream bodyStream(fullRequest.substr(bodyStart));
+
+        int parseError = 0;
+        parser.parseBody(bodyStream, req, maxBody, parseError);
+
+        if (parseError == 413)
+            req.error = 413;
+
         c.state  = RxState::READY;
         c.target = req.path;
 
-        // Verbrauchte Bytes aus Buffer löschen (wichtig für Keep-Alive)
+        // Verbrauchte Bytes entfernen (Keep-Alive!)
         c.rx.erase(0, totalNeeded);
-
-
 
         #ifdef DEBUG
         std::cout << "Resolved location: path=" << lc.path
-                << " root=" << lc.root << std::endl;
+                  << " root=" << lc.root << std::endl;
         #endif
 
-        // 7) Response generieren
+        // 9) Response generieren
         if (c.state == RxState::READY && c.tx.empty())
         {
             req.conn_fd = fds[i].fd;
@@ -484,10 +410,9 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             ResponseHandler handler;
             #ifdef DEBUG
             std::cout << "Dispatching to ResponseHandler: method=" << req.method
-                        << " path=" << req.path << std::endl;
+                      << " path=" << req.path << std::endl;
             #endif
 
-            // FIX: 4. Argument hinzugefügt – global_max_body aus g_cfg
             Response res = handler.handleRequest(req, lc);
 
             c.keep_alive = res.keep_alive;
@@ -498,19 +423,19 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
     }
     else if (n == 0)
     {
-        // Verbindung geschlossen
         closeClient(i);
         return false;
     }
     else
     {
         if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return true; // momentan alles gelesen
+            return true;
         perror("read");
         closeClient(i);
         return false;
     }
 }
+
 
 
 bool Server::handleClientWrite(size_t &i, long now_ms)
