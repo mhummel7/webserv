@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/05 13:00:57 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/05 13:18:56 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -316,13 +316,20 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         if (headerEnd == std::string::npos)
             return true; // Header noch nicht vollständig
 
-        std::string rawHead = c.rx.substr(0, headerEnd + 4);
+        std::string headers = c.rx.substr(0, headerEnd + 4);
 
         // 2) Kopf (Request Line + Header) parsen – OHNE Config
         RequestParser parser;
-        Request req = parser.parseHead(rawHead);
-        // -> req.method, req.path, req.version, req.headers,
-        //    req.is_chunked, req.content_len, req.keep_alive sind gesetzt
+        Request req;
+        if (!parser.parseHeaders(headers, req))
+        {
+            ResponseHandler handler;
+            Response res = handler.makeHtmlResponse(400, "<h1>400 Bad Request</h1>");
+            c.tx = res.toString();
+            fds[i].events &= ~POLLIN;
+            fds[i].events |= POLLOUT;
+            return true;
+        }
 
         // 3) vHost bestimmen
         int port = c.listen_port;
@@ -386,7 +393,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         std::istringstream bodyStream(fullRequest.substr(bodyStart));
 
         int parseError = 0;
-        parser.parseBody(bodyStream, req, maxBody, parseError);
+        parser.parseBody(bodyStream, req, lc, sc);
 
         if (parseError == 413)
             req.error = 413;
