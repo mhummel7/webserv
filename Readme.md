@@ -38,3 +38,5 @@ Config-Fehler (co): Cannot open config file: co
 → Starte mit Default-Server auf 127.0.0.1:8080
 Listening on 0.0.0.0:8080
 ==> config auslesen geht nicht richtig -> post funktioniert nd
+
+https://chatgpt.com/share/6932c48b-b694-800b-b22a-7e788b891dd7

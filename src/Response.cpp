@@ -580,8 +580,7 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
 	return res;
 }
 
-Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig,
-                                        const ServerConfig& serverConfig)
+Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig)
 {
    if (req.error != 0) {
         Response res;

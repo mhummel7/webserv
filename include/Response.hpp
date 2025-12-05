@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Response.hpp                                       :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/03 10:31:07 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/05 12:17:03 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,8 +37,7 @@ class ResponseHandler
 		ResponseHandler();
 		~ResponseHandler();
 
-		Response handleRequest(const Request& req, const LocationConfig& locConfig,
-                               const ServerConfig& serverConfig);
+		Response handleRequest(const Request& req, const LocationConfig& locConfig);
 		Response makeHtmlResponse(int status, const std::string& body);
 
 	private:

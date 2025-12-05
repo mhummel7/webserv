@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/04 10:43:33 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/05 12:29:39 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -307,44 +307,44 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
     // #ifdef DEBUG
     // std::cout << "========= Read returned n=" << n << " buf=" << buf << " =========" << std::endl;
     // #endif
-
+    
     if (n > 0)
     {
         Client &c = clients[i];
         c.last_active_ms = now_ms;
         c.rx.append(buf, n);
-
+        
         // Hard-Limit: zu viel Body im Buffer → 413
         if (c.rx.size() > c.max_body_bytes + 8192) { // + etwas Toleranz für Header
             ResponseHandler handler;
-
+            
             Response res = handler.makeHtmlResponse(413, "<h1>413 Payload Too Large</h1>");
             res.keep_alive = false;          // Verbindung wird nach Antwort geschlossen
             c.tx = res.toString();
-
+            
             c.rx.clear();                    // Body verwerfen
             fds[i].events &= ~POLLIN;        // nichts mehr lesen
             fds[i].events |= POLLOUT;        // nur noch schreiben
-
+            
             return true;
         }
-
-
+        
+        
         #ifdef DEBUG
         std::cout << "----- c.rx ----\n" << c.rx << "\n----------------\n";
         #endif
-
+        
         // 1) Header-Ende suchen
         size_t headerEnd = c.rx.find("\r\n\r\n");
         if (headerEnd == std::string::npos)
-            return true;
-
+        return true;
+        
         std::string headers = c.rx.substr(0, headerEnd + 4);
-
+        
         // 2) Chunked oder Content-Length?
         bool   isChunked     = false;
         size_t contentLength = 0;
-
+        
         // Transfer-Encoding prüfen
         {
             size_t tePos = headers.find("Transfer-Encoding:");
@@ -354,9 +354,9 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 std::string teLine = headers.substr(tePos, lineEnd - tePos);
                 if (teLine.find("chunked") != std::string::npos)
                     isChunked = true;
-            }
+                }
         }
-
+        
         // Content-Length (nur wenn NICHT chunked)
         if (!isChunked)
         {
@@ -365,7 +365,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             {
                 clPos += std::string("Content-Length:").length();
                 while (clPos < headers.size() && (headers[clPos] == ' ' || headers[clPos] == '\t'))
-                    ++clPos;
+                ++clPos;
                 size_t clEnd = headers.find("\r\n", clPos);
                 std::string clStr = headers.substr(clPos, clEnd - clPos);
                 contentLength = std::atoi(clStr.c_str());
@@ -374,12 +374,12 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 
         #ifdef DEBUG
         std::cout << "[DEBUG] isChunked=" << isChunked
-                    << " CL=" << contentLength
-                    << " max=" << c.max_body_bytes << std::endl;
+        << " CL=" << contentLength
+        << " max=" << c.max_body_bytes << std::endl;
         #endif
-
+        
         size_t totalNeeded = 0;
-
+        
         if (isChunked)
         {
             size_t bodyStart = headerEnd + 4;
@@ -403,11 +403,36 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 return true;
             }
         }
-
-        // 4) Vollständigen Request-String extrahieren
+        
+        // Limits an finalen Server anpassen (sicher: c.server_idx gesetzt)
+        const ServerConfig& sc = g_cfg.servers[c.server_idx];
+        
+        // 6) Location bestimmen (Longest Prefix Match) – Rest unverändert
+        auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
+        {
+            size_t best = 0, best_len = 0;
+            for (size_t j = 0; j < sc.locations.size(); ++j)
+            {
+                const std::string& p = sc.locations[j].path;
+                if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
+                {
+                    best = j;
+                    best_len = p.size();
+                }
+            }
+            if (best_len == 0)
+            {
+                for (size_t j = 0; j < sc.locations.size(); ++j)
+                    if (sc.locations[j].path == "/") return sc.locations[j];
+                return sc.locations.front();
+            }
+            return sc.locations[best];
+        };
+        const LocationConfig& lc = resolve_location(sc, "/");
+            // 4) Vollständigen Request-String extrahieren
         std::string fullRequest = c.rx.substr(0, totalNeeded);
-
-        // 5) Parsen
+            
+            // 5) Parsen
         Request req = RequestParser().parse(fullRequest, lc, sc);
         #ifdef DEBUG
         std::cout << "Parsed request: method=" << req.method
@@ -444,33 +469,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         // Verbrauchte Bytes aus Buffer löschen (wichtig für Keep-Alive)
         c.rx.erase(0, totalNeeded);
 
-        // Limits an finalen Server anpassen (sicher: c.server_idx gesetzt)
-        const ServerConfig& sc = g_cfg.servers[c.server_idx];
-        c.max_body_bytes = sc.client_max_body_size;
 
-        // 6) Location bestimmen (Longest Prefix Match) – Rest unverändert
-        auto resolve_location = [](const ServerConfig& sc, const std::string& path)->const LocationConfig&
-        {
-            size_t best = 0, best_len = 0;
-            for (size_t j = 0; j < sc.locations.size(); ++j)
-            {
-                const std::string& p = sc.locations[j].path;
-                if (!p.empty() && path.compare(0, p.size(), p) == 0 && p.size() > best_len)
-                {
-                    best = j;
-                    best_len = p.size();
-                }
-            }
-            if (best_len == 0)
-            {
-                for (size_t j = 0; j < sc.locations.size(); ++j)
-                    if (sc.locations[j].path == "/") return sc.locations[j];
-                return sc.locations.front();
-            }
-            return sc.locations[best];
-        };
-
-        const LocationConfig& lc = resolve_location(sc, c.target);
 
         #ifdef DEBUG
         std::cout << "Resolved location: path=" << lc.path
@@ -489,7 +488,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             #endif
 
             // FIX: 4. Argument hinzugefügt – global_max_body aus g_cfg
-            Response res = handler.handleRequest(req, lc, sc);
+            Response res = handler.handleRequest(req, lc);
 
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
