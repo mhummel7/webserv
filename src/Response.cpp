@@ -368,19 +368,14 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
     }
     fsPath = joinPath(fsPath, trimmedUrl);
 
-    // attach user color early so static html can be patched later
     std::string color = extractValidatedColor(req);
 
-    // directory handling
     if (isDirectory(fsPath)) {
         handleDirectoryRequest(url, fsPath, config, res);
         return res;
     }
 
-    // file handling (CGI or static)
-    // file handling (CGI or static)
     if (handleFileOrCgi(req, fsPath, config, res)) {
-        // inject color only for text/html static responses (leave CGI response intact)
         if (res.headers["Content-Type"] == "text/html") {
             size_t pos = res.body.find("<body");
             if (pos != std::string::npos) {
@@ -404,7 +399,6 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
 
 Response& ResponseHandler::methodPOST(const Request& req, Response& res, const LocationConfig& config)
 {
-    // Zuerst CGI-Fälle prüfen (z.B. .bla)
     std::string url = urlDecode(req.path);
     if (url.empty()) url = "/";
     url = normalizePath(url);
@@ -414,7 +408,6 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
         return res;
     }
 
-    // Filesystem-Pfad wie in GET bauen
     std::string fsPath = config.root.empty() ? std::string(".") : config.root;
     std::string trimmedUrl = url;
     if (!config.path.empty() && config.path != "/" && trimmedUrl.find(config.path) == 0) {
@@ -423,13 +416,12 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
     }
     fsPath = joinPath(fsPath, trimmedUrl);
 
-    // Extension bestimmen
     std::string ext;
     size_t dot = fsPath.find_last_of('.');
     if (dot != std::string::npos)
         ext = fsPath.substr(dot);
 
-    // Wenn Location ein CGI für diese Extension definiert hat → direkt CGI
+    // CGI-Mapping check
     std::map<std::string, std::string>::const_iterator it = config.cgi.find(ext);
     if (it != config.cgi.end())
     {
@@ -443,10 +435,9 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
         return res;
     }
 
-    // --- ALTER CODE (Upload) AB HIER ---
     std::string dir = config.root;
     if (dir.empty())
-        dir = "./root/data/"; // Fallback, sollte eigentlich nicht nötig sein
+        dir = "./root/data/";
 
 #ifdef DEBUG
 	std::cout << "POST data dir: " << dir << std::endl;
@@ -455,10 +446,9 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 	if (req.headers.count("Content-Type"))
 		contentType = req.headers.find("Content-Type")->second;
 
-	// --- Multipart upload ---
+    // Multipart-Formular-Upload
 	if (contentType.find("multipart/form-data") != std::string::npos)
 	{
-		// 1. Boundary extrahieren
 		size_t pos = contentType.find("boundary=");
 		if (pos == std::string::npos)
 		{
@@ -471,7 +461,6 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 			std::string boundary = "--" + contentType.substr(pos + 9);
 			std::string body = req.body;
 
-			// 2. Datei extrahieren (vereinfachte Variante)
 			size_t fileStart = body.find("filename=\"");
 			if (fileStart == std::string::npos)
 			{
@@ -485,7 +474,6 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 				size_t fileEnd = body.find("\"", fileStart);
 				std::string originalName = body.substr(fileStart, fileEnd - fileStart);
 
-				// 3. Dateidatenbereich suchen
 				size_t dataStart = body.find("\r\n\r\n", fileEnd);
 				if (dataStart == std::string::npos)
 				{
@@ -498,18 +486,16 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 					dataStart += 4;
 					size_t dataEnd = body.find(boundary, dataStart);
 					std::string fileContent = body.substr(dataStart, dataEnd - dataStart);
-					// Strip trailing \r\n if present
+
 					if (fileContent.size() >= 2 && fileContent[fileContent.size() - 2] == '\r')
 						fileContent.erase(fileContent.size() - 2);
 
-					// 4. Sicherer Dateiname (keine Pfad-Traversal)
 					for (size_t i = 0; i < originalName.size(); ++i)
 						if (originalName[i] == '/' || originalName[i] == '\\')
 							originalName[i] = '_';
 
 					std::string filePath = dir + "/" + originalName;
 
-					// 5. Datei speichern
 					std::ofstream out(filePath.c_str(), std::ios::binary);
 					if (!out.is_open())
 					{
@@ -531,7 +517,7 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 		}
 	}
 
-	// --- Fallback: raw upload ---
+	// Fallback: raw upload
 	else
 	{
 		std::string filename = dir + "/upload_" + std::to_string(time(NULL));
@@ -559,7 +545,7 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
 {
 	std::string dir = config.data_dir.empty() ? "./data" : config.data_dir;
 	std::string filepath = "root/" + dir;
-	filepath += "/" + req.body; // assuming the filename to delete is in the body
+	filepath += "/" + req.body;
 
 	#ifdef DEBUG
 	std::cout << "DELETE path: " << filepath << std::endl;
@@ -586,25 +572,22 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
         Response res;
         res.statusCode = req.error;
         res.reasonPhrase = getStatusMessage(req.error);
-
-        res.body = "<h1>" + std::to_string(req.error) + " Payload too large </h1>";
+        res.body = "<h1>" + std::to_string(req.error) + " " + res.reasonPhrase + "</h1>";
         res.headers["Content-Type"] = "text/html";
         res.headers["Content-Length"] = std::to_string(res.body.size());
         res.keep_alive = false;
-
         return res;
     }
 
     Response res;
     res.keep_alive = req.keep_alive;
 
-    // DYNAMISCHER PATH-BUILD (besser als hardcoded Index)
-    std::string fullPath = locConfig.root;  // Starte mit Root
-    std::string decodedPath = urlDecode(req.path);  // Decode für Sicherheit
+    std::string fullPath = locConfig.root;
+    std::string decodedPath = urlDecode(req.path);
     if (decodedPath.empty() || decodedPath == "/") {
-        fullPath += "/" + (locConfig.index.empty() ? "index.html" : locConfig.index);  // Fallback zu Index
+        fullPath += "/" + (locConfig.index.empty() ? "index.html" : locConfig.index);
     } else {
-        fullPath += decodedPath;  // Nutze req.path
+        fullPath += decodedPath;
     }
 
     // Default-Headers
@@ -612,15 +595,11 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
 #ifdef DEBUG
     printf("Full path: %s\n", fullPath.c_str());
-#endif
-
-    // Debug: Allowed methods (mit locConfig)
-    std::cout << "Allowed methods: ";
     for (size_t i = 0; i < locConfig.methods.size(); ++i)
         std::cout << locConfig.methods[i] << " ";
     std::cout << std::endl;
+#endif
 
-    // Method-Dispatch (mit locConfig; find für Effizienz)
     auto methodIt = std::find(locConfig.methods.begin(), locConfig.methods.end(), req.method);
     if (req.method == "GET" && methodIt != locConfig.methods.end()) {
         return methodGET(req, res, locConfig);
@@ -632,11 +611,9 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
         res.statusCode = 405;
         res.reasonPhrase = getStatusMessage(405);
         res.body = "<h1>405 Method Not Allowed</h1>";
-        res.headers["Content-Type"] = "text/html";  // Für Error
-        // Kein return hier – fällt durch zu Content-Length
+        res.headers["Content-Type"] = "text/html";
     }
 
-    // Content-Length (TIPPFEHLER GEFIXT: Kein Space vor [)
     res.headers["Content-Length"] = std::to_string(res.body.size());
 
 #ifdef DEBUG

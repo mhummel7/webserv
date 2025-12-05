@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:24 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/03 10:26:24 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/05 13:07:42 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -42,9 +42,8 @@ class RequestParser
 		RequestParser();
 		~RequestParser();
 
-		Request parse(const std::string& rawRequest, const LocationConfig & config, const ServerConfig & serverConfig);
-
-
+    bool parseHeaders(const std::string& rawHeaders, Request& req);
+    bool parseBody(std::istringstream& stream, Request& req, const LocationConfig& locationConfig, const ServerConfig& serverConfig);
 	private:
 		void parseRequestLine(const std::string& line, Request& req);
 		void parseHeaderLine(const std::string& line, Request& req);
