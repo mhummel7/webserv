@@ -55,7 +55,6 @@
             margin-bottom: 18px;
         }
 
-        /* Upload-Feld im gleichen Stil wie time.html-Boxen */
         .upload-box {
             display: block;
             width: 100%;
@@ -151,6 +150,28 @@
             font-style: italic;
             font-size: 0.9rem;
         }
+
+        /* Banner */
+        .status-banner {
+            margin-top: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            line-height: 1.4;
+            display: none;
+        }
+        .status-banner--error {
+            display: block;
+            background: #fee2e2;
+            border: 1px solid #fecaca;
+            color: #b91c1c;
+        }
+        .status-banner--success {
+            display: block;
+            background: #ecfdf3;
+            border: 1px solid #bbf7d0;
+            color: #166534;
+        }
     </style>
 </head>
 
@@ -161,14 +182,18 @@
         <div class="content-card">
             <h2>Datei hochladen</h2>
 
-            <form id="uploadForm" onsubmit="submitUpload(event)">
+            <!-- KEIN onsubmit mehr am Form -->
+            <form id="uploadForm">
                 <label class="upload-box">
                     <span id="fileLabel">Klicke hier, um eine Datei auszuwählen</span>
                     <input type="file" id="fileInput" name="file" required onchange="updateFileLabel()">
                 </label>
 
-                <button type="submit" class="btn-upload">Upload</button>
+                <!-- Button ruft direkt submitUpload(...) auf -->
+                <button type="button" class="btn-upload" onclick="submitUpload(event)">Upload</button>
             </form>
+
+            <div id="statusBanner" class="status-banner"></div>
         </div>
 
         <div class="content-card">
@@ -177,86 +202,134 @@
         </div>
     </div>
 
-    <script>
-        function updateFileLabel() {
-            const input = document.getElementById("fileInput");
-            const label = document.getElementById("fileLabel");
-            label.textContent = input.files.length
-                ? input.files[0].name
-                : "Klicke hier, um eine Datei auszuwählen";
+<script>
+    function updateFileLabel() {
+        const input = document.getElementById("fileInput");
+        const label = document.getElementById("fileLabel");
+        label.textContent = input.files.length
+            ? input.files[0].name
+            : "Klicke hier, um eine Datei auszuwählen";
+    }
+
+    function showStatus(message, type = "error") {
+        const el = document.getElementById("statusBanner");
+        el.textContent = message;
+        el.className = "status-banner";
+        if (type === "success") {
+            el.classList.add("status-banner--success");
+        } else {
+            el.classList.add("status-banner--error");
         }
+    }
 
-        async function loadPosts() {
-            const div = document.getElementById("data");
+    function clearStatus() {
+        const el = document.getElementById("statusBanner");
+        el.className = "status-banner";
+        el.textContent = "";
+    }
 
-            try {
-                const response = await fetch("/data");
-                if (!response.ok) {
-                    div.innerHTML = "<div class='empty-state'>Fehler beim Laden.</div>";
-                    return;
-                }
+    async function loadPosts() {
+        console.log("[loadPosts] called");
+        const div = document.getElementById("data");
 
-                const html = await response.text();
+        try {
+            const response = await fetch("/data");
+            console.log("[loadPosts] status", response.status);
 
-                // Temporary DOM to parse autoindex HTML
-                const temp = document.createElement("div");
-                temp.innerHTML = html;
-
-                // Alle Links extrahieren
-                const links = temp.querySelectorAll("a");
-                const files = [...links]
-                    .map(a => a.textContent.trim())
-                    .filter(name => name !== "posts"); // Ordner selbst herausfiltern
-
-                if (!files.length) {
-                    div.innerHTML = "<div class='empty-state'>Noch keine Dateien.</div>";
-                    return;
-                }
-
-                // Liste rendern
-                div.innerHTML = files.map(name => `
-                    <div class="file-item">
-                        <span class="file-name">${name}</span>
-                        <div class="file-actions">
-                            <a class="open-link" href="/data/${encodeURIComponent(name)}" target="_blank">Öffnen</a>
-                            <button class="delete-btn" onclick="deleteFile('${encodeURIComponent(name)}')">Löschen</button>
-                        </div>
-                    </div>
-                `).join("");
-            } catch(err) {
+            if (!response.ok) {
                 div.innerHTML = "<div class='empty-state'>Fehler beim Laden.</div>";
+                return;
             }
+
+            const html = await response.text();
+
+            const temp = document.createElement("div");
+            temp.innerHTML = html;
+
+            const links = temp.querySelectorAll("a");
+            const files = [...links]
+                .map(a => a.textContent.trim())
+                .filter(name => name !== "posts");
+
+            if (!files.length) {
+                div.innerHTML = "<div class='empty-state'>Noch keine Dateien.</div>";
+                return;
+            }
+
+            div.innerHTML = files.map(name => `
+                <div class="file-item">
+                    <span class="file-name">${name}</span>
+                    <div class="file-actions">
+                        <a class="open-link" href="/data/${encodeURIComponent(name)}" target="_blank">Öffnen</a>
+                        <button class="delete-btn" onclick="deleteFile('${encodeURIComponent(name)}')">Löschen</button>
+                    </div>
+                </div>
+            `).join("");
+        } catch (err) {
+            console.error("[loadPosts] error", err);
+            div.innerHTML = "<div class='empty-state'>Fehler beim Laden.</div>";
+        }
+    }
+
+    async function submitUpload(event) {
+        event.preventDefault();
+        clearStatus();
+        console.log("[submitUpload] triggered");
+
+        const input = document.getElementById("fileInput");
+        if (!input.files.length) {
+            console.log("[submitUpload] no file selected");
+            return;
         }
 
+        const formData = new FormData();
+        formData.append("file", input.files[0]);
 
+        try {
+            const response = await fetch("/data", { method: "POST", body: formData });
+            console.log("[submitUpload] status", response.status);
 
-
-        async function submitUpload(event) {
-            event.preventDefault();
-
-            const input = document.getElementById("fileInput");
-            if (!input.files.length) return;
-
-            const formData = new FormData();
-            formData.append("file", input.files[0]);
-
-            await fetch("/data", { method: "POST", body: formData });
-
-            input.value = "";
-            updateFileLabel();
-            loadPosts();
+            if (response.ok) {
+                showStatus("Upload erfolgreich. (" + response.status + ")", "success");
+            } else {
+                showStatus("Upload fehlgeschlagen (" + response.status + ")", "error");
+            }
+        } catch (err) {
+            console.error("[submitUpload] error", err);
+            showStatus("Netzwerkfehler beim Upload.", "error");
         }
 
-        async function deleteFile(name) {
-            await fetch("/data", {
+        input.value = "";
+        updateFileLabel();
+        await loadPosts();
+    }
+
+    async function deleteFile(name) {
+        clearStatus();
+        console.log("[deleteFile] triggered for", name);
+
+        try {
+            const response = await fetch("/data", {
                 method: "DELETE",
                 body: name
             });
+            console.log("[deleteFile] status", response.status);
 
-            loadPosts();
+            if (response.ok) {
+                showStatus("Datei erfolgreich gelöscht. (" + response.status + ")", "success");
+            } else {
+                showStatus("Löschen fehlgeschlagen (" + response.status + ")", "error");
+            }
+        } catch (err) {
+            console.error("[deleteFile] error", err);
+            showStatus("Netzwerkfehler beim Löschen.", "error");
         }
 
-        loadPosts();
-    </script>
+        await loadPosts();
+    }
+
+    console.log("[post.html] script loaded");
+    loadPosts();
+</script>
 </body>
 </html>
