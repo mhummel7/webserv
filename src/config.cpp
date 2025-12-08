@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/01 14:34:20 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/08 10:22:35 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -106,6 +106,10 @@ void Config::parseLocationBlock(std::ifstream& file, int& lineNum,
 		else if (key == "cgi" && params.size() >= 2) currentLocation->cgi[params[0]] = params[1];
 		else if (key == "data_store" && !params.empty()) currentLocation->data_store = params[0];
 		else if (key == "client_max_body_size" && !params.empty()) currentLocation->client_max_body_size = parseSize(params[0]);
+		else if (key == "error_page" && params.size() >= 2) {
+    int code = std::atoi(params[0].c_str());
+    currentLocation->error_pages[code] = params[1];  // params[1] ist der Pfad zur Error-Page
+}
 		else throw std::runtime_error("Unknown directive: " + key);
 		std::cout << default_client_max_body_size << std::endl;
 	}
@@ -240,3 +244,6 @@ void Config::parse_c(const std::string& filename) {
 		}
 	}
 }
+
+// Define the global Config instance here
+Config g_cfg;

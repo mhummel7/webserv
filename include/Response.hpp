@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Response.hpp                                       :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/05 12:17:03 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/08 10:25:51 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -37,14 +37,16 @@ class ResponseHandler
 		ResponseHandler();
 		~ResponseHandler();
 
-		Response handleRequest(const Request& req, const LocationConfig& locConfig);
+		Response handleRequest(const Request& req, const LocationConfig& locConfig, const ServerConfig& serverConfig);  // Neu: + serverConfig
 		Response makeHtmlResponse(int status, const std::string& body);
 
 	private:
 		std::string getStatusMessage(int code);
+		// Unter public: oder private: in class ResponseHandler
+		std::string loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml);
 		std::string readFile(const std::string& path);
 		bool fileExists(const std::string& path);
-		Response& methodGET(const Request& req, Response& res, const LocationConfig& config);
+		Response& methodGET(const Request& req, Response& res, const LocationConfig& config, const ServerConfig& serverConfig);
 		Response& methodPOST(const Request& req, Response& res, const LocationConfig& config);
 		Response& methodDELETE(const Request& req, Response& res, const LocationConfig& config);
 		bool handleDirectoryRequest(const std::string& url, const std::string& fsPath,

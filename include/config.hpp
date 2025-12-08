@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:26 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/01 14:27:28 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/08 10:22:20 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -90,5 +90,8 @@ private:
                                 const std::string& locationLine);
     void resolveVariables();
 };
+
+// Global Config instance (for error pages etc.)
+extern Config g_cfg;
 
 #endif

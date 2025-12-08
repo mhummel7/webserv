@@ -21,6 +21,9 @@
 #include <dirent.h>
 #include <algorithm>
 #include <cctype>
+#include "../include/config.hpp"  // Für g_cfg (global Config)
+#include "../include/Server.hpp"  // Für ServerConfig (falls nicht schon da)
+
 
 ResponseHandler::ResponseHandler() {}
 ResponseHandler::~ResponseHandler() {}
@@ -119,8 +122,7 @@ static std::string normalizePath(const std::string& path) {
     return out;
 }
 
-static bool containsPathTraversal(const std::string& s)
-{
+static bool containsPathTraversal(const std::string& s) {
     if (s.find("..") != std::string::npos) return true;
     return false;
 }
@@ -195,6 +197,21 @@ std::string ResponseHandler::getStatusMessage(int code)
         case 413: return "Payload too large";
 		default : return "Unkown";
 	}
+}
+
+std::string ResponseHandler::loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml) {
+    if (errorPath.empty()) {
+        return fallbackHtml;
+    }
+    std::string errorBase = "./root/";  // Fixed base for error pages
+    std::string relPath = errorPath;
+    if (!relPath.empty() && relPath[0] == '/') relPath = relPath.substr(1);  // Trim leading /
+    std::string fullPath = errorBase + relPath;
+    if (fileExists(fullPath)) {
+        return readFile(fullPath);
+    }
+    std::cerr << "Warning: Error page not found at " << fullPath << std::endl;
+    return fallbackHtml;
 }
 
 std::string ResponseHandler::readFile(const std::string& path)
@@ -347,15 +364,27 @@ static std::string extractValidatedColor(const Request& req)
     return sanitizeColor(cookieColor(req));
 }
 
-Response& ResponseHandler::methodGET(const Request& req, Response& res, const LocationConfig& config)
-{
+Response& ResponseHandler::methodGET(const Request& req, Response& res, const LocationConfig& config, const ServerConfig& serverConfig) {
     std::string url = urlDecode(req.path);
     if (url.empty()) url = "/";
     url = normalizePath(url);
 
     // security check
     if (containsPathTraversal(url)) {
-        res = makeHtmlResponse(403, "<h1>403 Forbidden</h1>");
+        res.statusCode = 403;
+        res.reasonPhrase = getStatusMessage(403);
+        std::string fallback = "<h1>403 Forbidden</h1>";
+        std::string errorPath;
+        if (config.error_pages.count(403)) {
+            errorPath = config.error_pages.at(403);
+        } else if (serverConfig.error_pages.count(403)) {
+            errorPath = serverConfig.error_pages.at(403);
+        } else if (g_cfg.default_error_pages.count(403)) {
+            errorPath = g_cfg.default_error_pages.at(403);
+        }
+        res.body = loadErrorPage(errorPath, fallback);
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
         return res;
     }
 
@@ -391,9 +420,22 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
         return res;
     }
 
+    // not found – 404-BLOCK
+    res.statusCode = 404;
+    res.reasonPhrase = getStatusMessage(404);
+    std::string errorPath;
+    if (config.error_pages.count(404)) {
+        errorPath = config.error_pages.at(404);
+    } else if (serverConfig.error_pages.count(404)) {
+        errorPath = serverConfig.error_pages.at(404);
+    } else if (g_cfg.default_error_pages.count(404)) {
+        errorPath = g_cfg.default_error_pages.at(404);
+    }
 
-    // not found
-    res = makeHtmlResponse(404, "<h1>404 Not Found</h1>");
+    std::string fallback = "<h1>404 Not Found</h1>";
+    res.body = loadErrorPage(errorPath, fallback);
+    res.headers["Content-Type"] = "text/html";
+    res.headers["Content-Length"] = std::to_string(res.body.size());
     return res;
 }
 
@@ -548,27 +590,27 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
     std::cout << "[DELETE] Request path: " << req.path << std::endl;
     std::cout << "[DELETE] Config root: " << config.root << std::endl;
     #endif
-    
+
     // 1. Dateiname aus dem Body extrahieren (Whitespace entfernen!)
     std::string filename = req.body;
-    
+
     // Entferne Newlines und Whitespace vom Ende
-    while (!filename.empty() && (filename.back() == '\r' || filename.back() == '\n' || 
+    while (!filename.empty() && (filename.back() == '\r' || filename.back() == '\n' ||
            filename.back() == ' ' || filename.back() == '\t')) {
         filename.pop_back();
     }
-    
+
     // 2. Sicherheitsprüfung
     if (filename.empty()) {
         res = makeHtmlResponse(400, "<h1>400 Bad Request - No filename specified</h1>");
         return res;
     }
-    
+
     if (containsPathTraversal(filename) || filename.find('/') != std::string::npos) {
         res = makeHtmlResponse(403, "<h1>403 Forbidden - Invalid filename</h1>");
         return res;
     }
-    
+
     // 3. Dateipfad erstellen
     std::string baseDir;
     if (!config.data_dir.empty()) {
@@ -578,18 +620,18 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
     } else {
         baseDir = "./root/data";
     }
-    
+
     // Sicherstellen, dass baseDir mit / endet
     if (!baseDir.empty() && baseDir.back() != '/') {
         baseDir += "/";
     }
-    
+
     std::string filepath = baseDir + filename;
-    
+
     #ifdef DEBUG
     std::cout << "[DELETE] Full path: " << filepath << std::endl;
     #endif
-    
+
     if (fileExists(filepath) && std::remove(filepath.c_str()) == 0) {
         res.statusCode = 200;
         res.reasonPhrase = getStatusMessage(200);
@@ -602,18 +644,30 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
     return res;
 }
 
-Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig)
+Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig, const ServerConfig& serverConfig)
 {
    if (req.error != 0) {
-        Response res;
-        res.statusCode = req.error;
-        res.reasonPhrase = getStatusMessage(req.error);
-        res.body = "<h1>" + std::to_string(req.error) + " " + res.reasonPhrase + "</h1>";
-        res.headers["Content-Type"] = "text/html";
-        res.headers["Content-Length"] = std::to_string(res.body.size());
-        res.keep_alive = false;
-        return res;
+    Response res;
+    res.statusCode = req.error;
+    res.reasonPhrase = getStatusMessage(req.error);
+
+    std::string errorPath;
+    if (locConfig.error_pages.count(req.error)) {
+        errorPath = locConfig.error_pages.at(req.error);
+    } else if (serverConfig.error_pages.count(req.error)) {
+        errorPath = serverConfig.error_pages.at(req.error);
+    } else if (g_cfg.default_error_pages.count(req.error)) {
+        errorPath = g_cfg.default_error_pages.at(req.error);
     }
+
+    std::string fallback = "<h1>" + std::to_string(req.error) + " " + res.reasonPhrase + "</h1>";
+    res.body = loadErrorPage(errorPath, fallback);
+
+    res.headers["Content-Type"] = "text/html";
+    res.headers["Content-Length"] = std::to_string(res.body.size());
+    res.keep_alive = false;
+    return res;
+}
 
     Response res;
     res.keep_alive = req.keep_alive;
@@ -638,7 +692,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 
     auto methodIt = std::find(locConfig.methods.begin(), locConfig.methods.end(), req.method);
     if (req.method == "GET" && methodIt != locConfig.methods.end()) {
-        return methodGET(req, res, locConfig);
+        return methodGET(req, res, locConfig, serverConfig);
     } else if (req.method == "POST" && methodIt != locConfig.methods.end()) {
         return methodPOST(req, res, locConfig);
     } else if (req.method == "DELETE" && methodIt != locConfig.methods.end()) {

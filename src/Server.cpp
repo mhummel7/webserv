@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/05 14:11:40 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/08 10:22:58 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -15,7 +15,6 @@
 #include <limits.h>
 
 // globals
-static Config g_cfg;
 static std::vector<pollfd>     fds;
 static std::unordered_set<int> listener_fds;
 static std::vector<Client>     clients;
@@ -339,20 +338,20 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         const LocationConfig& lc = resolve_location(sc, req.path);
 
         // 5. Early Check für Content-Length (falls nicht chunked)
-        bool isChunked = req.headers.count("Transfer-Encoding") && 
+        bool isChunked = req.headers.count("Transfer-Encoding") &&
                         req.headers["Transfer-Encoding"] == "chunked";
-        
+
         size_t contentLength = 0;
         if (!isChunked && req.headers.count("Content-Length")) {
             try {
                 contentLength = std::stoul(req.headers["Content-Length"]);
             } catch (...) {}
-            
+
             // Größenprüfung mit Location/Server-Konfiguration
             size_t maxBody = (lc.client_max_body_size > 0)
                             ? lc.client_max_body_size
                             : sc.client_max_body_size;
-            
+
             if (maxBody > 0 && contentLength > maxBody) {
                 req.error = 413;
             }
@@ -361,7 +360,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         // 6) Gesamten Request-Body warten
         size_t totalNeeded = headerEnd + 4; // Header + Leerzeile
         size_t bodyStart = headerEnd + 4;
-        
+
         if (isChunked) {
             size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
             if (endMarker == std::string::npos)
@@ -376,7 +375,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         // 7) Vollständigen Request parsen (inkl. Body)
         std::string fullRequest = c.rx.substr(0, totalNeeded);
         std::istringstream stream(fullRequest);
-        
+
         // Skip Headers (bereits geparst)
         std::string line;
         while (std::getline(stream, line)) {
@@ -385,13 +384,13 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             if (line.empty())
                 break;
         }
-        
+
         // 8. Body mit den neuen Parser-Funktionen parsen
         if (!parser.parseBody(stream, req, lc, sc)) {
             // Fehler beim Body-Parsing (413 oder 400)
             // req.error ist bereits gesetzt
         }
-        
+
         #ifdef DEBUG
         std::cout << "[SERVER] Parsed request body: '" << req.body << "'" << std::endl;
         std::cout << "[SERVER] Body size: " << req.body.size() << std::endl;
@@ -409,7 +408,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             req.conn_fd = fds[i].fd;
 
             ResponseHandler handler;
-            Response res = handler.handleRequest(req, lc);
+            Response res = handler.handleRequest(req, lc, sc);  // + sc (serverConfig)
 
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
@@ -456,14 +455,14 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
         closeClient(i);
         return false;
     }
-    else 
+    else
     { // m == 0
         // Sehr ungewöhnlich, aber sauber behandeln – am besten Verbindung schließen
         closeClient(i);
         return false;
     }
 
-    if (c.tx.empty()) 
+    if (c.tx.empty())
     {
         if (c.keep_alive)
         {
