@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Farbauswahl - WebServ</title>
+    <title>Color Selection - WebServ</title>
 
     <style>
         body {
@@ -63,7 +63,7 @@
             margin: 12px 0 20px;
             border: 1px solid #e2e8f0;
             box-shadow: inset 0 0 0 1px rgba(15,23,42,0.03);
-            /* Fallback: falls JS nicht läuft, nimm serverseitige CSS-Variable */
+            /* Fallback: if JS doesn't run, use server-side CSS variable */
             background: var(--user-color, #22d3ee);
         }
 
@@ -140,13 +140,13 @@
 </head>
 <body>
     <div class="container">
-        <a href="index.html" class="btn-back">← Zurück</a>
+        <a href="index.html" class="btn-back">← Back</a>
 
         <div class="content-card">
-            <h2>Farbauswahl mit Cookies</h2>
+            <h2>Color Selection with Cookies</h2>
             <p>
-                Wähle eine Farbe aus. Deine Auswahl wird als Cookie <code>color</code> gespeichert
-                und vom WebServ als Variable ins HTML injiziert.
+                Choose a color. Your selection will be saved as a cookie <code>color</code>
+                and injected into the HTML as a variable by WebServ.
             </p>
 
             <div class="color-preview" id="colorPreview"></div>
@@ -154,17 +154,17 @@
             <div class="color-grid" id="colorGrid"></div>
 
             <div class="info-box">
-                <div>Ausgewählte Farbe: <span id="selectedColor">#22d3ee</span></div>
-                <div>Cookie-Name: <span>color</span></div>
-                <div>Cookie-Wert: <span id="cookieValue">nicht gesetzt</span></div>
+                <div>Selected Color: <span id="selectedColor">#22d3ee</span></div>
+                <div>Cookie Name: <span>color</span></div>
+                <div>Cookie Value: <span id="cookieValue">not set</span></div>
             </div>
 
             <button class="btn-outline" onclick="clearCookie()">
-                Cookie löschen
+                Delete Cookie
             </button>
 
             <p class="hint-text">
-                Diese Seite demonstriert die Cookie-Funktionalität des WebServ.
+                This page demonstrates the cookie functionality of WebServ.
             </p>
         </div>
     </div>
@@ -172,16 +172,16 @@
     <script>
         const colors = [
             { name: 'Cyan', value: '#22d3ee' },
-            { name: 'Blau', value: '#3b82f6' },
-            { name: 'Lila', value: '#a855f7' },
-            { name: 'Rosa', value: '#ec4899' },
-            { name: 'Rot', value: '#ef4444' },
+            { name: 'Blue', value: '#3b82f6' },
+            { name: 'Purple', value: '#a855f7' },
+            { name: 'Pink', value: '#ec4899' },
+            { name: 'Red', value: '#ef4444' },
             { name: 'Orange', value: '#f97316' },
-            { name: 'Gelb', value: '#eab308' },
-            { name: 'Grün', value: '#22c55e' }
+            { name: 'Yellow', value: '#eab308' },
+            { name: 'Green', value: '#22c55e' }
         ];
 
-        // Helper: Cookie lesen
+        // Helper: Read cookie
         function getCookie(name) {
             const value = `; ${document.cookie}`;
             const parts = value.split(`; ${name}=`);
@@ -189,22 +189,22 @@
             return null;
         }
 
-        // Helper: Cookie setzen (Name = "color", path=/)
+        // Helper: Set cookie (Name = "color", path=/)
         function setCookie(name, value, days = 365) {
             const expires = new Date();
             expires.setTime(expires.getTime() + days * 24 * 60 * 60 * 1000);
             document.cookie = `${name}=${value};expires=${expires.toUTCString()};path=/`;
         }
 
-        // 1. Startfarbe vom Server aus CSS-Variable lesen
+        // 1. Initial color from server via CSS variable
         let selectedColor = (function () {
             const body = document.body;
             const cssVar = getComputedStyle(body).getPropertyValue('--user-color').trim();
             if (cssVar) return cssVar;
-            return '#22d3ee'; // Fallback, falls nichts gesetzt ist
+            return '#22d3ee'; // Fallback if nothing is set
         })();
 
-        // 2. Falls es schon ein "color"-Cookie gibt → das hat Priorität
+        // 2. If there's already a "color" cookie → it takes priority
         const savedColor = getCookie('color');
         if (savedColor) {
             selectedColor = savedColor;
@@ -214,7 +214,7 @@
             document.getElementById('colorPreview').style.backgroundColor = selectedColor;
             document.getElementById('selectedColor').textContent = selectedColor;
             const cookieValue = getCookie('color');
-            document.getElementById('cookieValue').textContent = cookieValue || 'nicht gesetzt';
+            document.getElementById('cookieValue').textContent = cookieValue || 'not set';
 
             document.querySelectorAll('.color-btn').forEach(btn => {
                 if (btn.dataset.color === selectedColor) {
@@ -236,7 +236,7 @@
             location.reload();
         }
 
-        // Color-Buttons erzeugen
+        // Generate color buttons
         const grid = document.getElementById('colorGrid');
         colors.forEach(color => {
             const btn = document.createElement('button');

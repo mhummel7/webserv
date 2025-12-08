@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Datei Upload – WebServ</title>
+    <title>File Upload – WebServ</title>
 
     <style>
         body {
@@ -177,19 +177,19 @@
 
 <body>
     <div class="container">
-        <a href="index.html" class="btn-back">← Zurück</a>
+        <a href="index.html" class="btn-back">← Back</a>
 
         <div class="content-card">
-            <h2>Datei hochladen</h2>
+            <h2>File Upload</h2>
 
-            <!-- KEIN onsubmit mehr am Form -->
+            <!-- No onsubmit on Form anymore -->
             <form id="uploadForm">
                 <label class="upload-box">
-                    <span id="fileLabel">Klicke hier, um eine Datei auszuwählen</span>
+                    <span id="fileLabel">Click here to select a file</span>
                     <input type="file" id="fileInput" name="file" required onchange="updateFileLabel()">
                 </label>
 
-                <!-- Button ruft direkt submitUpload(...) auf -->
+                <!-- Button directly calls submitUpload(...) -->
                 <button type="button" class="btn-upload" onclick="submitUpload(event)">Upload</button>
             </form>
 
@@ -197,7 +197,7 @@
         </div>
 
         <div class="content-card">
-            <h2>Hochgeladene Dateien</h2>
+            <h2>Uploaded Files</h2>
             <div id="data"></div>
         </div>
     </div>
@@ -208,7 +208,7 @@
         const label = document.getElementById("fileLabel");
         label.textContent = input.files.length
             ? input.files[0].name
-            : "Klicke hier, um eine Datei auszuwählen";
+            : "Click here to select a file";
     }
 
     function showStatus(message, type = "error") {
@@ -237,7 +237,7 @@
             console.log("[loadPosts] status", response.status);
 
             if (!response.ok) {
-                div.innerHTML = "<div class='empty-state'>Fehler beim Laden.</div>";
+                div.innerHTML = "<div class='empty-state'>Error loading.</div>";
                 return;
             }
 
@@ -252,7 +252,7 @@
                 .filter(name => name !== "posts");
 
             if (!files.length) {
-                div.innerHTML = "<div class='empty-state'>Noch keine Dateien.</div>";
+                div.innerHTML = "<div class='empty-state'>No files yet.</div>";
                 return;
             }
 
@@ -260,14 +260,14 @@
                 <div class="file-item">
                     <span class="file-name">${name}</span>
                     <div class="file-actions">
-                        <a class="open-link" href="/data/${encodeURIComponent(name)}" target="_blank">Öffnen</a>
-                        <button class="delete-btn" onclick="deleteFile('${encodeURIComponent(name)}')">Löschen</button>
+                        <a class="open-link" href="/data/${encodeURIComponent(name)}" target="_blank">Open</a>
+                        <button class="delete-btn" onclick="deleteFile('${encodeURIComponent(name)}')">Delete</button>
                     </div>
                 </div>
             `).join("");
         } catch (err) {
             console.error("[loadPosts] error", err);
-            div.innerHTML = "<div class='empty-state'>Fehler beim Laden.</div>";
+            div.innerHTML = "<div class='empty-state'>Error loading.</div>";
         }
     }
 
@@ -290,13 +290,13 @@
             console.log("[submitUpload] status", response.status);
 
             if (response.ok) {
-                showStatus("Upload erfolgreich. (" + response.status + ")", "success");
+                showStatus("Upload successful. (" + response.status + ")", "success");
             } else {
-                showStatus("Upload fehlgeschlagen (" + response.status + ")", "error");
+                showStatus("Upload failed (" + response.status + ")", "error");
             }
         } catch (err) {
             console.error("[submitUpload] error", err);
-            showStatus("Netzwerkfehler beim Upload.", "error");
+            showStatus("Network error during upload.", "error");
         }
 
         input.value = "";
@@ -316,13 +316,13 @@
             console.log("[deleteFile] status", response.status);
 
             if (response.ok) {
-                showStatus("Datei erfolgreich gelöscht. (" + response.status + ")", "success");
+                showStatus("File successfully deleted. (" + response.status + ")", "success");
             } else {
-                showStatus("Löschen fehlgeschlagen (" + response.status + ")", "error");
+                showStatus("Delete failed (" + response.status + ")", "error");
             }
         } catch (err) {
             console.error("[deleteFile] error", err);
-            showStatus("Netzwerkfehler beim Löschen.", "error");
+            showStatus("Network error during delete.", "error");
         }
 
         await loadPosts();

@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="de">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Uhrzeit - WebServ</title>
+    <title>Time - WebServ</title>
 
     <style>
         body {
@@ -87,25 +87,25 @@
 
 <body>
     <div class="container">
-        <a href="index.html" class="btn-back">← Zurück</a>
+        <a href="index.html" class="btn-back">← Back</a>
 
         <div class="content-card">
-            <h2>Uhrzeit CGI-Skript</h2>
+            <h2>Time CGI Script</h2>
 
-            <p>Ruft <code>/cgi-bin/time.py</code> auf und zeigt die Ausgabe an.</p>
+            <p>Calls <code>/cgi-bin/time.py</code> and displays the output.</p>
 
             <div id="output" class="output-box loading">
-                Lade Uhrzeit…
+                Loading time…
             </div>
 
-            <button class="btn-refresh" onclick="loadTime()">🔄 Aktualisieren</button>
+            <button class="btn-refresh" onclick="loadTime()">🔄 Refresh</button>
         </div>
     </div>
 
     <script>
         function loadTime() {
             const box = document.getElementById('output');
-            box.textContent = "Lade Uhrzeit…";
+            box.textContent = "Loading time…";
 
             fetch('root/cgi-bin/time.py', { cache: "no-store" })
                 .then(r => r.text())
@@ -114,11 +114,11 @@
                     box.innerHTML = txt;
                 })
                 .catch(err => {
-                    box.innerHTML = "<b>Fehler:</b> " + err;
+                    box.innerHTML = "<b>Error:</b> " + err;
                 });
         }
 
-        // Beim Seitenladen direkt CGI laden:
+        // Load CGI on page load:
         loadTime();
     </script>
 </body>
