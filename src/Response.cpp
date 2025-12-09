@@ -318,16 +318,12 @@ bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsP
     if (dot != std::string::npos)
         ext = fsPath.substr(dot);
 
-    // 1) location-spezifisches CGI-Mapping, z.B.:
-    //    cgi .bla ./cgi_tester;
     std::map<std::string, std::string>::const_iterator it = config.cgi.find(ext);
     if (it != config.cgi.end())
     {
-        const std::string& execPath = it->second; // z.B. "./cgi_tester"
+        const std::string& execPath = it->second;
 
         CGIHandler cgi;
-        // wir geben dem CGI Handler den Pfad der ausführbaren Datei
-        // und die eigentliche angeforderte .bla-Datei (fsPath) als "Script-Datei"
         Response r = cgi.executeWith(req, execPath, fsPath);
 
         r.keep_alive = req.keep_alive;
@@ -337,11 +333,10 @@ bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsP
         return true;
     }
 
-    // 2) Klassische CGI-Erkennung nach Extension (.py/.php/.cgi)
     if (isCGIRequest(fsPath)) {
         CGIHandler cgi;
         Request req_cgi = req;
-        req_cgi.path = fsPath; // echtes Skript im Dateisystem
+        req_cgi.path = fsPath;
         res = cgi.execute(req_cgi);
         res.keep_alive = req.keep_alive;
         if (!res.headers.count("Content-Length"))
@@ -349,7 +344,6 @@ bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsP
         return true;
     }
 
-    // 3) Statische Datei
     res.statusCode = 200;
     res.reasonPhrase = ResponseHandler().getStatusMessage(200);
     res.body = readFile(fsPath);
@@ -358,7 +352,6 @@ bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsP
     return true;
 }
 
-// extract validated color from req cookies (wrapper of existing helpers)
 static std::string extractValidatedColor(const Request& req)
 {
     return sanitizeColor(cookieColor(req));
