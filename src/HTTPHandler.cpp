@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/05 13:07:45 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/09 10:49:32 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,17 +18,21 @@ RequestParser::RequestParser() {};
 
 RequestParser::~RequestParser() {};
 
-static bool decodeChunkedBody(std::istream& stream, std::string& out, std::string& err)
+static bool decodeChunkedBody(std::istream& stream, std::string& out,  std::string& err, size_t maxSize = 0)
 {
     out.clear();
     std::string line;
+    size_t totalSize = 0;
 
     while (true) {
-        // Lese die Size-Line (hex [;extensions]) terminated by CRLF
-        if (!std::getline(stream, line)) { err = "unexpected EOF reading chunk size"; return false; }
+        // Lese die Size-Line
+        if (!std::getline(stream, line)) { 
+            err = "unexpected EOF reading chunk size"; 
+            return false; 
+        }
         if (!line.empty() && line.back() == '\r') line.pop_back();
 
-        // ignore any empty lines before the size (robustness)
+        // Ignore empty lines
         if (line.empty()) continue;
 
         size_t sem = line.find(';');
@@ -43,7 +47,7 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out, std::strin
         }
 
         if (chunkSize == 0) {
-            // letzte Chunk: consume optional trailer headers until empty line
+            // Letzte Chunk
             while (std::getline(stream, line)) {
                 if (!line.empty() && line.back() == '\r') line.pop_back();
                 if (line.empty()) break;
@@ -51,36 +55,46 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out, std::strin
             return true;
         }
 
-        // Lese exakt chunkSize Bytes
+        // NEU: Prüfe, ob dieses Chunk das Limit überschreitet
+        if (maxSize > 0 && totalSize + chunkSize > maxSize) {
+            err = "chunked body too large (max: " + std::to_string(maxSize) + ")";
+            return false;
+        }
+
+        // Lese Chunk
         std::string chunk;
         chunk.resize(chunkSize);
         stream.read(&chunk[0], static_cast<std::streamsize>(chunkSize));
         std::streamsize got = stream.gcount();
-        if (static_cast<size_t>(got) != chunkSize) { err = "incomplete chunk data"; return false; }
+        if (static_cast<size_t>(got) != chunkSize) { 
+            err = "incomplete chunk data"; 
+            return false; 
+        }
+        
         out.append(chunk);
+        totalSize += chunkSize;
+        
+        // NEU: Nach dem Hinzufügen nochmal prüfen (falls maxSize 0 war)
+        if (maxSize > 0 && totalSize > maxSize) {
+            err = "chunked body too large (max: " + std::to_string(maxSize) + ")";
+            return false;
+        }
 
-        // Nach dem Chunk muss ein CRLF kommen; versuchen sauber zu konsumieren
-        // Lese zwei Zeichen; toleriere LF allein (robust gegen einige senders).
+        // Chunk Terminator
         int c1 = stream.get();
         if (c1 == EOF) { err = "missing chunk terminator (EOF)"; return false; }
-        if (c1 == '\n') {
-            // ok (lenient)
-            continue;
-        }
+        if (c1 == '\n') continue;
         if (c1 == '\r') {
             int c2 = stream.get();
             if (c2 == EOF) { err = "missing chunk terminator (EOF)"; return false; }
             if (c2 == '\n') continue;
-            // unexpected char after '\r'
             err = "invalid chunk terminator";
             return false;
         }
-        // unexpected char (neither LF nor CR)
         err = "invalid chunk terminator";
         return false;
     }
-    // unreachable
-    return false;
+    return true;
 }
 
 // Request RequestParser::parse(const std::string& rawRequest, const LocationConfig& locationConfig, const ServerConfig& serverConfig)
@@ -218,19 +232,28 @@ bool RequestParser::parseHeaders(const std::string& rawHeaders, Request& req)
     return true;
 }
 
-bool RequestParser::parseBody(
-    std::istringstream& stream,
-    Request& req,
-    const LocationConfig& locationConfig,
-    const ServerConfig& serverConfig)
+bool RequestParser::parseBody(std::istringstream& stream, Request& req, const LocationConfig& locationConfig, const ServerConfig& serverConfig)
 {
-    // READ BODY SIZE HEADERS (bereits bekannt aus Headers)
+    const size_t maxBody =
+        (locationConfig.client_max_body_size > 0)
+        ? locationConfig.client_max_body_size
+        : serverConfig.client_max_body_size;
+
+    // READ BODY SIZE HEADERS
     if (req.headers.count("Transfer-Encoding") && 
-        req.headers["Transfer-Encoding"] == "chunked") {
+        req.headers["Transfer-Encoding"] == "chunked")
+    {
         req.is_chunked = true;
-    } else if (req.headers.count("Content-Length")) {
-        try {
+    } 
+    else if (req.headers.count("Content-Length"))
+    {
+        try
+        {
             req.content_len = std::stoul(req.headers["Content-Length"]);
+            if (maxBody > 0 && req.content_len > maxBody) {
+                req.error = 413;
+                return false;
+            }
         } catch (...) {
             req.content_len = 0;
         }
@@ -239,36 +262,46 @@ bool RequestParser::parseBody(
     // READ BODY (chunked or normal)
     if (req.is_chunked) {
         std::string err;
-        if (!decodeChunkedBody(stream, req.body, err)) {
+        if (!decodeChunkedBody(stream, req.body, err, maxBody)) {
             std::cerr << "Chunked decode error: " << err << std::endl;
             req.body.clear();
             req.content_len = 0;
-            req.error = 400; // Bad Request
+            
+            if (err.find("too large") != std::string::npos) {
+                req.error = 413;
+            } else {
+                req.error = 400;
+            }
             return false;
         }
         req.content_len = req.body.size();
-    } else if (req.content_len > 0) {
+    }
+    else if (req.content_len > 0)
+    {
+        if (maxBody > 0 && req.content_len > maxBody)
+        {
+            req.error = 413;
+            return false;
+        }
+        
         std::string body;
         body.resize(req.content_len);
         stream.read(&body[0], req.content_len);
         body.resize(static_cast<size_t>(stream.gcount()));
         req.body = body;
-    } else {
+    }
+    else
+    {
         std::string rest;
         std::getline(stream, rest, '\0');
         req.body = rest;
         req.content_len = req.body.size();
-    }
-    
-    // MAX BODY SIZE CHECK (LOCATION > SERVER)
-    const size_t maxBody =
-        (locationConfig.client_max_body_size > 0)
-        ? locationConfig.client_max_body_size
-        : serverConfig.client_max_body_size;
-    
-    if (maxBody > 0 && req.content_len > maxBody) {
-        req.error = 413; // Payload Too Large
-        return false;
+        
+        if (maxBody > 0 && req.content_len > maxBody)
+        {
+            req.error = 413;
+            return false;
+        }
     }
     
     return true;
