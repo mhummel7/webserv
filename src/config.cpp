@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/08 10:22:35 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/10 12:13:19 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -111,7 +111,9 @@ void Config::parseLocationBlock(std::ifstream& file, int& lineNum,
     currentLocation->error_pages[code] = params[1];  // params[1] ist der Pfad zur Error-Page
 }
 		else throw std::runtime_error("Unknown directive: " + key);
+		#ifdef DEBUG
 		std::cout << default_client_max_body_size << std::endl;
+		#endif
 	}
 }
 

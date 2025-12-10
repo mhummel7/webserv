@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   HTTPHandler.cpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/09 10:49:32 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/10 12:06:41 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -26,9 +26,9 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out,  std::stri
 
     while (true) {
         // Lese die Size-Line
-        if (!std::getline(stream, line)) { 
-            err = "unexpected EOF reading chunk size"; 
-            return false; 
+        if (!std::getline(stream, line)) {
+            err = "unexpected EOF reading chunk size";
+            return false;
         }
         if (!line.empty() && line.back() == '\r') line.pop_back();
 
@@ -66,14 +66,14 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out,  std::stri
         chunk.resize(chunkSize);
         stream.read(&chunk[0], static_cast<std::streamsize>(chunkSize));
         std::streamsize got = stream.gcount();
-        if (static_cast<size_t>(got) != chunkSize) { 
-            err = "incomplete chunk data"; 
-            return false; 
+        if (static_cast<size_t>(got) != chunkSize) {
+            err = "incomplete chunk data";
+            return false;
         }
-        
+
         out.append(chunk);
         totalSize += chunkSize;
-        
+
         // NEU: Nach dem Hinzufügen nochmal prüfen (falls maxSize 0 war)
         if (maxSize > 0 && totalSize > maxSize) {
             err = "chunked body too large (max: " + std::to_string(maxSize) + ")";
@@ -97,121 +97,19 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out,  std::stri
     return true;
 }
 
-// Request RequestParser::parse(const std::string& rawRequest, const LocationConfig& locationConfig, const ServerConfig& serverConfig)
-// {
-//     Request req;
-//     std::istringstream stream(rawRequest);
-//     std::string line;
-
-//     // ------------------------------------------------------
-//     // REQUEST LINE
-//     // ------------------------------------------------------
-//     if (!std::getline(stream, line))
-//         return req; // empty request
-//     if (!line.empty() && line.back() == '\r')
-//         line.pop_back();
-//     parseRequestLine(line, req);
-
-//     // ------------------------------------------------------
-//     // HEADERS
-//     // ------------------------------------------------------
-//     while (std::getline(stream, line))
-//     {
-//         if (!line.empty() && line.back() == '\r')
-//             line.pop_back();
-//         if (line.empty())
-//             break;
-//         parseHeaderLine(line, req);
-//     }
-
-//     // Connection handling
-//     if (req.version == "HTTP/1.1")
-//         req.keep_alive = !(req.headers.count("Connection")
-//                            && req.headers["Connection"] == "close");
-//     else if (req.version == "HTTP/1.0")
-//         req.keep_alive = (req.headers.count("Connection")
-//                           && req.headers["Connection"] == "keep-alive");
-
-//     // ------------------------------------------------------
-//     // READ BODY SIZE HEADERS
-//     // ------------------------------------------------------
-//     if (req.headers.count("Transfer-Encoding")
-//         && req.headers["Transfer-Encoding"] == "chunked")
-//     {
-//         req.is_chunked = true;
-//     }
-//     else if (req.headers.count("Content-Length"))
-//     {
-//         try {
-//             req.content_len = std::stoul(req.headers["Content-Length"]);
-//         } catch (...) {
-//             req.content_len = 0;
-//         }
-//     }
-
-//     // ------------------------------------------------------
-//     // READ BODY (chunked or normal)
-//     // ------------------------------------------------------
-//     if (req.is_chunked)
-//     {
-//         std::string err;
-//         if (!decodeChunkedBody(stream, req.body, err))
-//         {
-//             std::cerr << "Chunked decode error: " << err << std::endl;
-//             req.body.clear();
-//             req.content_len = 0;
-//         }
-//         else
-//         {
-//             req.content_len = req.body.size();
-//         }
-//     }
-//     else if (req.content_len > 0)
-//     {
-//         std::string body;
-//         body.resize(req.content_len);
-//         stream.read(&body[0], req.content_len);
-//         body.resize(static_cast<size_t>(stream.gcount()));
-//         req.body = body;
-//     }
-//     else
-//     {
-//         std::string rest;
-//         std::getline(stream, rest, '\0');
-//         req.body = rest;
-//         req.content_len = req.body.size();
-//     }
-
-//     // ------------------------------------------------------
-//     //  MAX BODY SIZE CHECK (LOCATION > SERVER)
-//     // ------------------------------------------------------
-//     const size_t maxBody =
-//         (locationConfig.client_max_body_size > 0)
-//         ? locationConfig.client_max_body_size
-//         : serverConfig.client_max_body_size;
-
-//     if (maxBody > 0 && req.content_len > maxBody)
-//     {
-//         req.error = 413;            // Payload Too Large
-//         return req;                // Handler erstellt danach Error-Response
-//     }
-
-//     return req;
-// }
-
 // In RequestParser.cpp
 bool RequestParser::parseHeaders(const std::string& rawHeaders, Request& req)
 {
     std::istringstream stream(rawHeaders);
     std::string line;
-    
+
     // Request-Line
     if (!std::getline(stream, line))
         return false;
     if (!line.empty() && line.back() == '\r')
         line.pop_back();
     parseRequestLine(line, req);
-    
+
     // Headers
     while (std::getline(stream, line)) {
         if (!line.empty() && line.back() == '\r')
@@ -220,15 +118,15 @@ bool RequestParser::parseHeaders(const std::string& rawHeaders, Request& req)
             break;
         parseHeaderLine(line, req);
     }
-    
+
     // Connection handling
     if (req.version == "HTTP/1.1")
-        req.keep_alive = !(req.headers.count("Connection") && 
+        req.keep_alive = !(req.headers.count("Connection") &&
                           req.headers["Connection"] == "close");
     else if (req.version == "HTTP/1.0")
-        req.keep_alive = (req.headers.count("Connection") && 
+        req.keep_alive = (req.headers.count("Connection") &&
                          req.headers["Connection"] == "keep-alive");
-    
+
     return true;
 }
 
@@ -240,11 +138,11 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req, const Lo
         : serverConfig.client_max_body_size;
 
     // READ BODY SIZE HEADERS
-    if (req.headers.count("Transfer-Encoding") && 
+    if (req.headers.count("Transfer-Encoding") &&
         req.headers["Transfer-Encoding"] == "chunked")
     {
         req.is_chunked = true;
-    } 
+    }
     else if (req.headers.count("Content-Length"))
     {
         try
@@ -258,7 +156,7 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req, const Lo
             req.content_len = 0;
         }
     }
-    
+
     // READ BODY (chunked or normal)
     if (req.is_chunked) {
         std::string err;
@@ -266,7 +164,7 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req, const Lo
             std::cerr << "Chunked decode error: " << err << std::endl;
             req.body.clear();
             req.content_len = 0;
-            
+
             if (err.find("too large") != std::string::npos) {
                 req.error = 413;
             } else {
@@ -283,7 +181,7 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req, const Lo
             req.error = 413;
             return false;
         }
-        
+
         std::string body;
         body.resize(req.content_len);
         stream.read(&body[0], req.content_len);
@@ -296,14 +194,14 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req, const Lo
         std::getline(stream, rest, '\0');
         req.body = rest;
         req.content_len = req.body.size();
-        
+
         if (maxBody > 0 && req.content_len > maxBody)
         {
             req.error = 413;
             return false;
         }
     }
-    
+
     return true;
 }
 
