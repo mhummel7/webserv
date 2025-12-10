@@ -272,7 +272,7 @@ Response ResponseHandler::makeHtmlResponse(int status, const std::string& body)
 {
     Response r;
     r.statusCode = status;
-    r.reasonPhrase = ResponseHandler().getStatusMessage(status);
+    r.reasonPhrase = getStatusMessage(status);
     r.body = body;
     r.headers["Content-Type"] = "text/html";
     r.headers["Content-Length"] = std::to_string(r.body.size());
@@ -286,7 +286,7 @@ bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::
     std::string indexFile = joinPath(fsPath, config.index.empty() ? "index.html" : config.index);
     if (fileExists(indexFile)) {
         res.statusCode = 200;
-        res.reasonPhrase = ResponseHandler().getStatusMessage(200);
+        res.reasonPhrase = getStatusMessage(200);
         res.body = readFile(indexFile);
         res.headers["Content-Type"] = getMimeType(indexFile);
         res.headers["Content-Length"] = std::to_string(res.body.size());
@@ -294,7 +294,7 @@ bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::
     }
     if (config.autoindex) {
         res.statusCode = 200;
-        res.reasonPhrase = ResponseHandler().getStatusMessage(200);
+        res.reasonPhrase = getStatusMessage(200);
         res.body = generateDirectoryListing(fsPath, url);
         res.headers["Content-Type"] = "text/html";
         res.headers["Content-Length"] = std::to_string(res.body.size());
@@ -345,7 +345,7 @@ bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsP
     }
 
     res.statusCode = 200;
-    res.reasonPhrase = ResponseHandler().getStatusMessage(200);
+    res.reasonPhrase = getStatusMessage(200);
     res.body = readFile(fsPath);
     res.headers["Content-Type"] = getMimeType(fsPath);
     res.headers["Content-Length"] = std::to_string(res.body.size());
@@ -639,10 +639,13 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
 
 Response ResponseHandler::handleRequest(const Request& req, const LocationConfig& locConfig, const ServerConfig& serverConfig)
 {
-   if (req.error != 0) {
+   if (req.error != 0)
+   {
+    std::cout << "req.error nicht 0:" << req.error << std::endl;
     Response res;
     res.statusCode = req.error;
     res.reasonPhrase = getStatusMessage(req.error);
+    res.body = "<h1>413 Payload too large.</h1>";
 
     std::string errorPath;
     if (locConfig.error_pages.count(req.error)) {
@@ -659,8 +662,9 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
     res.headers["Content-Type"] = "text/html";
     res.headers["Content-Length"] = std::to_string(res.body.size());
     res.keep_alive = false;
+    std::cout << "ende von decode error res.status:" << res.statusCode << std::endl;
     return res;
-}
+    }
 
     Response res;
     res.keep_alive = req.keep_alive;

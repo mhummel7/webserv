@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/09 11:18:09 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/10 13:02:17 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -155,11 +155,25 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
         close(pipeOut[1]);
 
         // Request-Body schreiben
-        if (!req.body.empty())
-        {
-            ssize_t written = write(pipeIn[1], req.body.c_str(), req.body.size());
-            if (written < 0)
-                perror("write to CGI stdin");
+        if (!req.body.empty()) {
+            size_t to_write = req.body.size();
+            const char* ptr = req.body.c_str();
+            while (to_write > 0) {
+                ssize_t written = write(pipeIn[1], ptr, to_write);
+                if (written < 0) {
+                    if (errno == EINTR) continue;          // Interrupt → nochmal
+                    if (errno == EPIPE) {                  // CGI hat stdin geschlossen
+                        // völlig okay: CGI braucht nicht den ganzen Body
+                        break;
+                    }
+                    perror("write to CGI stdin");
+                    break;
+                }
+                if (written == 0)
+                    break;
+                ptr += written;
+                to_write -= written;
+            }
         }
         close(pipeIn[1]);
 

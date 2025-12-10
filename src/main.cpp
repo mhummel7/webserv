@@ -12,6 +12,6 @@ int main(int argc, char* argv[])
         std::cout << "Usage: " << argv[0] << " <config-file>\n";
         std::cout << "Starting with default config...\n";
     }
-
+    signal(SIGPIPE, SIG_IGN); 
     return webserv(argc, argv);
 }

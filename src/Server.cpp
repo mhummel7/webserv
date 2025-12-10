@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/08 10:22:58 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/10 11:49:38 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -410,8 +410,10 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             ResponseHandler handler;
             Response res = handler.handleRequest(req, lc, sc);  // + sc (serverConfig)
 
+            std::cout << "nun sind wir im SERVER:" << res.statusCode << std::endl;
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
+            std::cout << "zum Abschluss nochmal c.tx:" << c.tx << std::endl;
             fds[i].events |= POLLOUT;
         }
         return true;
@@ -490,8 +492,8 @@ int Server::run(int argc, char* argv[])
     {
         if (server.listen_port == 0)
             server.listen_port = 80;
-        if (server.client_max_body_size == 0)
-            server.client_max_body_size = g_cfg.default_client_max_body_size;
+        // if (server.client_max_body_size == 0)
+        //     server.client_max_body_size = g_cfg.default_client_max_body_size;
         if (server.error_pages.empty())
             server.error_pages = g_cfg.default_error_pages;
 

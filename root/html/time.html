@@ -66,22 +66,6 @@
             color: #666;
             font-style: italic;
         }
-
-        .btn-refresh {
-            margin-top: 16px;
-            background: #4f46e5;
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 1rem;
-            transition: background .15s;
-        }
-
-        .btn-refresh:hover {
-            background: #4338ca;
-        }
     </style>
 </head>
 
@@ -97,8 +81,6 @@
             <div id="output" class="output-box loading">
                 Loading time…
             </div>
-
-            <button class="btn-refresh" onclick="loadTime()">🔄 Refresh</button>
         </div>
     </div>
 
@@ -107,7 +89,7 @@
             const box = document.getElementById('output');
             box.textContent = "Loading time…";
 
-            fetch('root/cgi-bin/time.py', { cache: "no-store" })
+            fetch('/cgi-bin/time.py', { cache: "no-store" })
                 .then(r => r.text())
                 .then(txt => {
                     box.classList.remove("loading");
