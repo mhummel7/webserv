@@ -104,7 +104,6 @@ static std::string urlDecode(const std::string& s) {
     return ret;
 }
 
-
 // Normiert Pfad: entfernt doppelte Slashes, einfache Normalisierung
 static std::string normalizePath(const std::string& path) {
     std::string out;
@@ -230,7 +229,6 @@ bool ResponseHandler::fileExists(const std::string& path)
 	struct stat buf;
 	return (stat(path.c_str(), &buf) == 0);
 }
-
 
 void setHeaders(Response& res, const Request& req)
 {
