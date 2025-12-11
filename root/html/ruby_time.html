@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Server Time</title>
+    <style>
+        body { font-family: 'Courier New', monospace; background: #1a1a2e; color: #eee; padding: 40px; }
+        .clock { text-align: center; margin: 50px 0; }
+        .time { font-size: 3em; color: #16c79a; font-weight: bold; }
+        .date { font-size: 1.5em; color: #11999e; margin: 20px 0; }
+        .info { background: #0f3460; padding: 20px; border-radius: 8px; margin: 20px auto; max-width: 600px; }
+        h1 { color: #16c79a; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>🕐 Server Time & Info</h1>
+    <div class="clock">
+        <div class="time">#{now.strftime('%H:%M:%S')}</div>
+        <div class="date">#{now.strftime('%A, %B %d, %Y')}</div>
+    </div>
+    <div class="info">
+        <strong>Unix Timestamp:</strong> #{now.to_i}<br>
+        <strong>Timezone:</strong> #{now.zone}<br>
+        <strong>ISO 8601:</strong> #{now.iso8601}<br>
+        <strong>Uptime:</strong> #{uptime}
+    </div>
+</body>
+</html>
