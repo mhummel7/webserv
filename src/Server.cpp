@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/12 12:43:02 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/12 13:12:32 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -502,7 +502,7 @@ int Server::run(int argc, char* argv[])
 
     setupListeners();
 
-    const long IDLE_MS = 150000; // timeout zeit
+    const long IDLE_MS = g_cfg.keepalive_timeout_ms;
     char buf[4096];
     #ifdef DEBUG
     std::cout << "Echo server with write-buffer on port 8080...\n";
