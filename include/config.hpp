@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:26 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/08 10:22:20 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/12 13:05:26 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -74,6 +74,7 @@ public:
 	std::map<int, std::string> default_error_pages;  // Globale Error-Pages
 	size_t default_client_max_body_size;            // Globale Body-Size
 	std::map<std::string, std::string> variables;   // z.B. {"data_dir", "/var/www/data"}
+	size_t keepalive_timeout_ms = 75000;
 
 	Config();  // Konstruktor mit Default-Werten
 	void parse_c(const std::string& filename);  // Parsen der Config-Datei

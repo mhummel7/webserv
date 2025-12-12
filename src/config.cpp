@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/10 12:13:19 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/12 13:07:49 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -36,11 +36,31 @@ static size_t parseSize(const std::string& sizeStr) {
 	return size;
 }
 
+static size_t parseTime(const std::string& timeStr) {
+	std::string s = trim(timeStr);
+	if (s.empty()) return 150000; // fallback
+
+	char* end;
+	long value = std::strtol(s.c_str(), &end, 10);
+	if (end == s.c_str()) return 150000; // kein Zahlenwert
+
+	std::string unit = trim(std::string(end));
+	if (unit.empty() || unit == "s" || unit == "S")
+		return value * 1000;           // Sekunden → Millisekunden
+	else if (unit == "m" || unit == "M")
+		return value * 60 * 1000;      // Minuten
+	else if (unit == "h" || unit == "H")
+		return value * 3600 * 1000;    // Stunden
+	else
+		return value * 1000;           // unbekannte Einheit → annehmen: Sekunden
+}
+
 // ====================================================================
 // Config Member-Funktionen (müssen inline oder im .cpp sein!)
 // ====================================================================
 
-Config::Config() : default_client_max_body_size(1048576) {}
+Config::Config() : default_client_max_body_size(1048576),
+					keepalive_timeout_ms(75000) {}  // Nginx-Default: 75s
 
 void Config::handleClosingBrace(std::vector<Context>& stack,
 								ServerConfig*& currentServer,
@@ -206,7 +226,9 @@ void Config::parse_c(const std::string& filename) {
 				default_client_max_body_size = parseSize(params[0]);
 			else if (key == "data_dir" && !params.empty())
 				variables["data_dir"] = params[0];
-			// TODO: Add more global directives here if needed
+			else if (key == "keepalive_timeout" && !params.empty()) {
+    g_cfg.keepalive_timeout_ms = parseTime(params[0]);
+}
 		}
 		else if (contextStack.back() == SERVER && currentServer) {
 			if (key == "listen" && !params.empty()) {
