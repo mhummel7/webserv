@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/10 13:02:17 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/12 12:06:04 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -91,105 +91,112 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
     pid_t pid = fork();
     if (pid == 0)
     {
-        // ========================================
-        // CHILD PROZESS
-        // ========================================
+        // CHILD 
         dup2(pipeIn[0], STDIN_FILENO);
         dup2(pipeOut[1], STDOUT_FILENO);
         close(pipeIn[1]);
         close(pipeOut[0]);
 
-        // Extrahiere Verzeichnis und Dateinamen
         std::string scriptDir;
         std::string scriptName;
         
         size_t lastSlash = scriptFile.find_last_of('/');
         if (lastSlash != std::string::npos) {
             scriptDir = scriptFile.substr(0, lastSlash);
-            scriptName = scriptFile.substr(lastSlash + 1);  // Nur Dateiname!
-        } else {
+            scriptName = scriptFile.substr(lastSlash + 1);
+        } 
+        else
+        {
             scriptDir = ".";
             scriptName = scriptFile;
         }
 
-        // Working Directory setzen
-        if (chdir(scriptDir.c_str()) != 0) {
+        if (chdir(scriptDir.c_str()) != 0)
+        {
             perror("chdir to script directory");
-            exit(1);  // Bei chdir-Fehler abbrechen
+            exit(1);
         }
 
-        // envp bauen
-        char** envp = new char*[env.size() + 1];
-        int i = 0;
+        std::vector<char*> envp_vec;
+        envp_vec.reserve(env.size() + 1);
+        
         for (std::map<std::string, std::string>::const_iterator it = env.begin();
              it != env.end(); ++it)
         {
             std::string entry = it->first + "=" + it->second;
-            envp[i++] = strdup(entry.c_str());
+            envp_vec.push_back(strdup(entry.c_str()));
         }
-        envp[i] = NULL;
+        envp_vec.push_back(NULL);
 
-        // argv bauen - WICHTIG: Nur den Dateinamen verwenden!
         std::vector<char*> argv;
         argv.push_back(const_cast<char*>(execPath.c_str()));
         if (!scriptName.empty())
-            argv.push_back(const_cast<char*>(scriptName.c_str()));  // Nur Dateiname!
+            argv.push_back(const_cast<char*>(scriptName.c_str()));
         argv.push_back(NULL);
 
-        execve(execPath.c_str(), &argv[0], envp);
+        execve(execPath.c_str(), &argv[0], &envp_vec[0]);
         
-        // execve failed - cleanup
-        for (int j = 0; envp[j]; ++j)
-            free(envp[j]);
-        delete[] envp;
+        for (size_t j = 0; j < envp_vec.size() - 1; ++j)
+        {
+            if (envp_vec[j])
+                free(envp_vec[j]);
+        }
         
         perror("execve");
-        exit(1);
+        exit(127);
     }
     else if (pid > 0)
     {
-        // ========================================
         // PARENT PROZESS
-        // ========================================
         close(pipeIn[0]);
         close(pipeOut[1]);
 
-        // Request-Body schreiben
-        if (!req.body.empty()) {
+        bool write_error = false;
+
+        if (!req.body.empty())
+        {
             size_t to_write = req.body.size();
             const char* ptr = req.body.c_str();
-            while (to_write > 0) {
+            
+            while (to_write > 0 && !write_error)
+            {
                 ssize_t written = write(pipeIn[1], ptr, to_write);
-                if (written < 0) {
-                    if (errno == EINTR) continue;          // Interrupt → nochmal
-                    if (errno == EPIPE) {                  // CGI hat stdin geschlossen
-                        // völlig okay: CGI braucht nicht den ganzen Body
-                        break;
-                    }
-                    perror("write to CGI stdin");
+                
+                if (written < 0)
+                {
+                    write_error = true;
                     break;
                 }
                 if (written == 0)
                     break;
+                
                 ptr += written;
                 to_write -= written;
             }
         }
         close(pipeIn[1]);
-
-        // Output lesen
+        
         std::ostringstream output;
         char buffer[4096];
-        ssize_t bytes;
-        while ((bytes = read(pipeOut[0], buffer, sizeof(buffer))) > 0)
-            output.write(buffer, bytes);
+        
+        while (true)
+        {
+            ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
+            
+            if (bytes > 0) {
+                output.write(buffer, bytes);
+            } else if (bytes == 0) {
+                break;
+            } else {
+                perror("read from CGI stdout");
+                break;
+            }
+        }
         close(pipeOut[0]);
 
-        // Auf Child warten und Exit-Status prüfen
         int status;
         waitpid(pid, &status, 0);
 
-        // Exit-Status auswerten
         if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
         {
             std::cerr << "CGI exited with code " << WEXITSTATUS(status) << std::endl;
@@ -213,7 +220,6 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
             return res;
         }
 
-        // Erfolg
         std::string out = output.str();
         res.statusCode = 200;
         res.reasonPhrase = "OK";
@@ -252,15 +258,12 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 
     if (pid == 0)
     {
-        // ========================================
-        // CHILD PROZESS
-        // ========================================
+        // CHILD
         dup2(pipeIn[0], STDIN_FILENO);
         dup2(pipeOut[1], STDOUT_FILENO);
         close(pipeIn[1]);
         close(pipeOut[0]);
 
-        // Extrahiere Verzeichnis und Dateinamen
         std::string scriptDir;
         std::string scriptName;
         
@@ -268,101 +271,98 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
         if (lastSlash != std::string::npos) {
             scriptDir = scriptPath.substr(0, lastSlash);
             scriptName = scriptPath.substr(lastSlash + 1);
-        } else {
+        }
+        else
+        {
             scriptDir = ".";
             scriptName = scriptPath;
         }
 
-        // Working Directory setzen
-        if (chdir(scriptDir.c_str()) != 0) {
+        if (chdir(scriptDir.c_str()) != 0)
+        {
             perror("chdir to script directory");
             exit(1);
         }
 
-        // envs bauen
-        char** envp = new char*[env.size() + 1];
-        int i = 0;
+        std::vector<char*> envp_vec;
+        envp_vec.reserve(env.size() + 1);
+        
         for (std::map<std::string, std::string>::const_iterator it = env.begin(); 
              it != env.end(); ++it)
         {
             std::string entry = it->first + "=" + it->second;
-            envp[i++] = strdup(entry.c_str());
+            envp_vec.push_back(strdup(entry.c_str()));
         }
-        envp[i] = NULL;
+        envp_vec.push_back(NULL);
 
-        // argv bauen
         std::string interpreter = getInterpreter(scriptPath);
         char* argv[3];
         
         if (!interpreter.empty()) {
-            // z.B. PHP, Python ohne Shebang
             argv[0] = const_cast<char*>(interpreter.c_str());
-            argv[1] = const_cast<char*>(scriptName.c_str());  // Nur Dateiname!
+            argv[1] = const_cast<char*>(scriptName.c_str());
             argv[2] = NULL;
-            execve(interpreter.c_str(), argv, envp);
-        } else {
-            // Script hat Shebang
-            argv[0] = const_cast<char*>(scriptName.c_str());  // Nur Dateiname!
+            execve(interpreter.c_str(), argv, &envp_vec[0]);
+        } 
+        else
+        {
+            argv[0] = const_cast<char*>(scriptName.c_str());
             argv[1] = NULL;
-            execve(scriptName.c_str(), argv, envp);
+            execve(scriptName.c_str(), argv, &envp_vec[0]);
         }
 
-        // execve failed - cleanup
-        for (int j = 0; envp[j]; ++j)
-            free(envp[j]);
-        delete[] envp;
+        for (size_t j = 0; j < envp_vec.size() - 1; ++j) {
+            if (envp_vec[j]) free(envp_vec[j]);
+        }
 
         perror("execve");
-        exit(1);
+        exit(127);
     }
     else if (pid > 0)
     {
-        // ========================================
-        // PARENT PROZESS
-        // ========================================
+        // PARRENT
         close(pipeIn[0]);
         close(pipeOut[1]);
 
-        // Schreibe Request-Body
-        if (!body.empty()) {
+        if (!body.empty())
+        {
             size_t to_write = body.size();
             const char* ptr = body.c_str();
-            while (to_write > 0) {
+            
+            while (to_write > 0)
+            {
                 ssize_t written = write(pipeIn[1], ptr, to_write);
-                if (written < 0) {
-                    if (errno == EAGAIN || errno == EINTR) continue;
-                    perror("write to CGI stdin");
-                    close(pipeIn[1]);
-                    close(pipeOut[0]);
-                    waitpid(pid, NULL, 0);
-                    return "<h1>CGI write error</h1>";
-                } else if (written == 0) {
+                
+                if (written < 0)
                     break;
-                }
+                if (written == 0)
+                    break;
+                
                 ptr += written;
                 to_write -= written;
             }
         }
         close(pipeIn[1]);
 
-        // Lese Ausgabe
         std::ostringstream output;
         char buffer[4096];
-        while (true) {
+        
+        while (true)
+        {
             ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
-            if (bytes > 0) {
+            
+            if (bytes > 0)
                 output.write(buffer, bytes);
-            } else if (bytes == 0) {
+            else if (bytes == 0)
                 break;
-            } else {
-                if (errno == EAGAIN || errno == EINTR) continue;
+            else
+            {
                 perror("read from CGI stdout");
                 break;
             }
         }
         close(pipeOut[0]);
 
-        // Exit-Status prüfen
         int status;
         waitpid(pid, &status, 0);
 
