@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/12 12:06:04 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/12 12:27:57 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -17,6 +17,9 @@
 #include <sstream>
 #include <iostream>
 #include <string.h>
+#include <vector>
+#include <memory>
+#include <algorithm>
 
 CGIHandler::CGIHandler() {}
 CGIHandler::~CGIHandler() {}
@@ -65,6 +68,77 @@ static std::string getInterpreter(const std::string& scriptPath)
     return "";
 }
 
+
+static bool chdir_to_script_dir(const std::string& scriptPath, std::string& outDir, std::string& outName)
+{
+    size_t lastSlash = scriptPath.find_last_of('/');
+    if (lastSlash != std::string::npos) {
+        outDir = scriptPath.substr(0, lastSlash);
+        outName = scriptPath.substr(lastSlash + 1);
+    } else {
+        outDir = ".";
+        outName = scriptPath;
+    }
+    if (chdir(outDir.c_str()) != 0) {
+        perror("chdir to script directory");
+        return false;
+    }
+    return true;
+}
+
+static std::vector<char*> build_envp_vec(const std::map<std::string, std::string>& env)
+{
+    std::vector<char*> envp_vec;
+    envp_vec.reserve(env.size() + 1);
+    for (std::map<std::string, std::string>::const_iterator it = env.begin(); it != env.end(); ++it)
+    {
+        std::string entry = it->first + "=" + it->second;
+        envp_vec.push_back(strdup(entry.c_str()));
+    }
+    envp_vec.push_back(NULL);
+    return envp_vec;
+}
+
+static void free_envp_vec(std::vector<char*>& envp_vec)
+{
+    for (size_t j = 0; j + 1 < envp_vec.size(); ++j) {
+        if (envp_vec[j]) free(envp_vec[j]);
+    }
+}
+
+static bool write_full(int fd, const std::string& body)
+{
+    if (body.empty()) return true;
+    size_t to_write = body.size();
+    const char* ptr = body.c_str();
+    while (to_write > 0) {
+        ssize_t written = write(fd, ptr, to_write);
+        if (written < 0) return false;
+        if (written == 0) break;
+        ptr += written;
+        to_write -= written;
+    }
+    return true;
+}
+
+static std::string read_all(int fd)
+{
+    std::ostringstream output;
+    char buffer[4096];
+    while (true) {
+        ssize_t bytes = read(fd, buffer, sizeof(buffer));
+        if (bytes > 0) {
+            output.write(buffer, bytes);
+        } else if (bytes == 0) {
+            break;
+        } else {
+            perror("read from CGI stdout");
+            break;
+        }
+    }
+    return output.str();
+}
+
 Response CGIHandler::executeWith(const Request& req, const std::string& execPath, const std::string& scriptFile)
 {
     Response res;
@@ -91,7 +165,7 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
     pid_t pid = fork();
     if (pid == 0)
     {
-        // CHILD 
+        // CHILD
         dup2(pipeIn[0], STDIN_FILENO);
         dup2(pipeOut[1], STDOUT_FILENO);
         close(pipeIn[1]);
@@ -99,99 +173,36 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
 
         std::string scriptDir;
         std::string scriptName;
-        
-        size_t lastSlash = scriptFile.find_last_of('/');
-        if (lastSlash != std::string::npos) {
-            scriptDir = scriptFile.substr(0, lastSlash);
-            scriptName = scriptFile.substr(lastSlash + 1);
-        } 
-        else
-        {
-            scriptDir = ".";
-            scriptName = scriptFile;
-        }
-
-        if (chdir(scriptDir.c_str()) != 0)
-        {
-            perror("chdir to script directory");
+        if (!chdir_to_script_dir(scriptFile, scriptDir, scriptName))
             exit(1);
-        }
 
-        std::vector<char*> envp_vec;
-        envp_vec.reserve(env.size() + 1);
-        
-        for (std::map<std::string, std::string>::const_iterator it = env.begin();
-             it != env.end(); ++it)
-        {
-            std::string entry = it->first + "=" + it->second;
-            envp_vec.push_back(strdup(entry.c_str()));
-        }
-        envp_vec.push_back(NULL);
+        std::vector<char*> envp_vec = build_envp_vec(env);
 
         std::vector<char*> argv;
+        argv.reserve(3);
         argv.push_back(const_cast<char*>(execPath.c_str()));
         if (!scriptName.empty())
             argv.push_back(const_cast<char*>(scriptName.c_str()));
         argv.push_back(NULL);
 
-        execve(execPath.c_str(), &argv[0], &envp_vec[0]);
-        
-        for (size_t j = 0; j < envp_vec.size() - 1; ++j)
-        {
-            if (envp_vec[j])
-                free(envp_vec[j]);
-        }
-        
+        execve(execPath.c_str(), argv.data(), envp_vec.data());
+
+        free_envp_vec(envp_vec);
         perror("execve");
         exit(127);
     }
     else if (pid > 0)
     {
-        // PARENT PROZESS
+        // PARENT PROCESS
         close(pipeIn[0]);
         close(pipeOut[1]);
 
-        bool write_error = false;
-
-        if (!req.body.empty())
-        {
-            size_t to_write = req.body.size();
-            const char* ptr = req.body.c_str();
-            
-            while (to_write > 0 && !write_error)
-            {
-                ssize_t written = write(pipeIn[1], ptr, to_write);
-                
-                if (written < 0)
-                {
-                    write_error = true;
-                    break;
-                }
-                if (written == 0)
-                    break;
-                
-                ptr += written;
-                to_write -= written;
-            }
+        if (!write_full(pipeIn[1], req.body)) {
+            std::cerr << "Warning: failed to write request body to CGI stdin\n";
         }
         close(pipeIn[1]);
-        
-        std::ostringstream output;
-        char buffer[4096];
-        
-        while (true)
-        {
-            ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
-            
-            if (bytes > 0) {
-                output.write(buffer, bytes);
-            } else if (bytes == 0) {
-                break;
-            } else {
-                perror("read from CGI stdout");
-                break;
-            }
-        }
+ 
+        std::string out = read_all(pipeOut[0]);
         close(pipeOut[0]);
 
         int status;
@@ -220,7 +231,6 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
             return res;
         }
 
-        std::string out = output.str();
         res.statusCode = 200;
         res.reasonPhrase = "OK";
         res.headers["Content-Type"] = "text/html";
@@ -239,7 +249,6 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
         return res;
     }
 }
-
 
 std::string CGIHandler::runCGI(const std::string& scriptPath, 
                                 const std::map<std::string, std::string>& env, 
@@ -266,101 +275,43 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 
         std::string scriptDir;
         std::string scriptName;
-        
-        size_t lastSlash = scriptPath.find_last_of('/');
-        if (lastSlash != std::string::npos) {
-            scriptDir = scriptPath.substr(0, lastSlash);
-            scriptName = scriptPath.substr(lastSlash + 1);
-        }
-        else
-        {
-            scriptDir = ".";
-            scriptName = scriptPath;
-        }
-
-        if (chdir(scriptDir.c_str()) != 0)
-        {
-            perror("chdir to script directory");
+        if (!chdir_to_script_dir(scriptPath, scriptDir, scriptName))
             exit(1);
-        }
 
-        std::vector<char*> envp_vec;
-        envp_vec.reserve(env.size() + 1);
-        
-        for (std::map<std::string, std::string>::const_iterator it = env.begin(); 
-             it != env.end(); ++it)
-        {
-            std::string entry = it->first + "=" + it->second;
-            envp_vec.push_back(strdup(entry.c_str()));
-        }
-        envp_vec.push_back(NULL);
+        std::vector<char*> envp_vec = build_envp_vec(env);
 
         std::string interpreter = getInterpreter(scriptPath);
-        char* argv[3];
-        
+        std::vector<char*> argv;
+        argv.reserve(3);
+
         if (!interpreter.empty()) {
-            argv[0] = const_cast<char*>(interpreter.c_str());
-            argv[1] = const_cast<char*>(scriptName.c_str());
-            argv[2] = NULL;
-            execve(interpreter.c_str(), argv, &envp_vec[0]);
+            argv.push_back(const_cast<char*>(interpreter.c_str()));
+            argv.push_back(const_cast<char*>(scriptName.c_str()));
+            argv.push_back(NULL);
+            execve(interpreter.c_str(), argv.data(), envp_vec.data());
         } 
         else
         {
-            argv[0] = const_cast<char*>(scriptName.c_str());
-            argv[1] = NULL;
-            execve(scriptName.c_str(), argv, &envp_vec[0]);
+            argv.push_back(const_cast<char*>(scriptName.c_str()));
+            argv.push_back(NULL);
+            execve(scriptName.c_str(), argv.data(), envp_vec.data());
         }
 
-        for (size_t j = 0; j < envp_vec.size() - 1; ++j) {
-            if (envp_vec[j]) free(envp_vec[j]);
-        }
-
+        free_envp_vec(envp_vec);
         perror("execve");
         exit(127);
     }
     else if (pid > 0)
     {
-        // PARRENT
+        // PARENT
         close(pipeIn[0]);
         close(pipeOut[1]);
 
         if (!body.empty())
-        {
-            size_t to_write = body.size();
-            const char* ptr = body.c_str();
-            
-            while (to_write > 0)
-            {
-                ssize_t written = write(pipeIn[1], ptr, to_write);
-                
-                if (written < 0)
-                    break;
-                if (written == 0)
-                    break;
-                
-                ptr += written;
-                to_write -= written;
-            }
-        }
+            write_full(pipeIn[1], body);
         close(pipeIn[1]);
 
-        std::ostringstream output;
-        char buffer[4096];
-        
-        while (true)
-        {
-            ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
-            
-            if (bytes > 0)
-                output.write(buffer, bytes);
-            else if (bytes == 0)
-                break;
-            else
-            {
-                perror("read from CGI stdout");
-                break;
-            }
-        }
+        std::string output = read_all(pipeOut[0]);
         close(pipeOut[0]);
 
         int status;
@@ -379,7 +330,7 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
                    + std::to_string(WTERMSIG(status)) + "</p>";
         }
 
-        return output.str();
+        return output;
     }
     else
     {
