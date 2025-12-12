@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/10 11:49:38 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/12 12:43:02 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -43,10 +43,14 @@ static void reset_for_next_request(Client& c)
 static int add_listener(uint16_t port)
 {
     int s = ::socket(AF_INET, SOCK_STREAM, 0);
-    if (s < 0) { perror("socket"); return -1; }
+    if (s < 0)
+        return -1;
+
     int yes = 1;
-    if (::setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0) {
-        perror("setsockopt"); ::close(s); return -1;
+    if (::setsockopt(s, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) < 0)
+    {
+        ::close(s);
+        return -1;
     }
 
     sockaddr_in a{};
@@ -56,36 +60,35 @@ static int add_listener(uint16_t port)
 
     if (::bind(s, (sockaddr*)&a, sizeof(a)) < 0)
     {
-        perror("bind");
         ::close(s);
         return -1;
     }
 
     if (::listen(s, 128) < 0)
     {
-        perror("listen");
         ::close(s);
         return -1;
     }
 
     if (make_nonblocking(s) < 0)
     {
-        perror("fcntl");
         ::close(s);
         return -1;
     }
 
-    pollfd p{}; p.fd = s; p.events = POLLIN; p.revents = 0;
-    #ifdef DEBUG
-    std::cout << "Added listener fd=" << s << " on port " << port << "\n";
-    #endif
+    pollfd p{};
+    p.fd = s;
+    p.events = POLLIN;
+    p.revents = 0;
+
     fds.push_back(p);
-    clients.push_back(Client{}); // Dummy, hält Index-Sync
+    clients.push_back(Client{}); // Index-Sync
     listener_fds.insert(s);
 
     std::cout << "Listening on 0.0.0.0:" << port << "\n";
     return s;
 }
+
 
 
 int webserv(int argc, char* argv[])
@@ -236,8 +239,7 @@ void Server::handleListenerEvent(size_t index, long now_ms)
         int cfd = accept(fd, NULL, NULL);
         if (cfd < 0)
         {
-            if (errno==EAGAIN || errno==EWOULDBLOCK) break;
-            perror("accept"); break;
+            break;
         }
         make_nonblocking(cfd);
         pollfd cp{}; cp.fd = cfd; cp.events = POLLIN; cp.revents = 0;
@@ -425,11 +427,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
     }
     else
     {
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return true;
-        perror("read");
-        closeClient(i);
-        return false;
+        return true;
     }
 }
 
@@ -446,20 +444,13 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
 
     if (m > 0)
     {
-        c.tx.erase(0, m);
+        c.tx.erase(0, static_cast<size_t>(m));
         c.last_active_ms = now_ms;
-    }
-    else if (m < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
         return true;
-    else if (m < 0)
-    {
-        perror("write");
-        closeClient(i);
-        return false;
     }
-    else
-    { // m == 0
-        // Sehr ungewöhnlich, aber sauber behandeln – am besten Verbindung schließen
+    if (m == 0)
+    {
+        // praktisch: connection kaputt / closed -> schließen
         closeClient(i);
         return false;
     }
@@ -527,14 +518,13 @@ int Server::run(int argc, char* argv[])
         handleTimeouts(now_ms, IDLE_MS);
 
         //poll
+        static int poll_fail = 0;
         int ready = poll(&fds[0], fds.size(), 1000);
-        if (ready < 0)
-        {
-            if (errno==EINTR)
-                continue;
-            perror("poll");
-            break;
+        if (ready < 0) {
+            if (++poll_fail > 1000) break;
+            continue;
         }
+        poll_fail = 0;
 
         //Events abarbeiten
         for (size_t i = 0; i < fds.size(); ++i)
