@@ -2,37 +2,48 @@
 
 puts "Content-Type: text/html\r\n\r\n"
 
-puts "<!DOCTYPE html><html><head><title>Error Test</title></head><body>"
-puts "<h1>Error Demonstration</h1>"
+puts <<HTML
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CGI Error Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .error { color: red; font-weight: bold; background: #ffeeee; padding: 20px; border: 2px solid red; }
+        .success { color: green; background: #eeffee; padding: 20px; border: 2px solid green; }
+    </style>
+</head>
+<body>
+    <h1>CGI Error Demonstration</h1>
+    <p>Dieses Skript demonstriert einen einfachen Runtime-Fehler in Ruby.</p>
+HTML
 
-# Verschiedene Fehler-Typen (Kommentar entfernen zum Testen)
-
-# 1. Division durch Null (RuntimeError)
-puts "<h2>1. Division durch Null:</h2>"
+# Einfache Division durch Null - wird einen Fehler verursachen
 begin
-  zero = 0
-  result = 100 / zero  # Hier kommt der Fehler
-  puts "<p>Resultat: #{result}</p>"
+    puts "<div class='error'>"
+    puts "<h2>Versuche Division durch Null:</h2>"
+    
+    zero = 0
+    result = 100 / zero  # Hier kommt der Fehler!
+    
+    puts "<p>Ergebnis: #{result}</p>"
+    puts "<p>Dies sollte nie erreicht werden.</p>"
+    puts "</div>"
 rescue => e
-  puts "<p style='color: red;'><strong>Fehler:</strong> #{e.class}: #{e.message}</p>"
+    puts "<div class='error'>"
+    puts "<h2>❌ Fehler aufgetreten!</h2>"
+    puts "<p><strong>Fehlertyp:</strong> #{e.class}</p>"
+    puts "<p><strong>Fehlermeldung:</strong> #{e.message}</p>"
+    puts "</div>"
 end
 
-rescue => e
-  puts "<p style='color: red;'><strong>Fehler:</strong> #{e.message}</p>"
-  puts "<h3>Backtrace:</h3>"
-  puts "<pre>"
-  e.backtrace.each do |line|
-    puts line
-  end
-  puts "</pre>"
-end
-
-puts "<hr>"
-puts "<h2>Server Environment:</h2>"
-puts "<pre>"
-ENV.each do |key, value|
-  puts "#{key}: #{value}" if key.start_with?('HTTP_', 'REQUEST_', 'SERVER_')
-end
-puts "</pre>"
-
-puts "</body></html>"
+puts <<HTML
+    <hr>
+    <div class='success'>
+        <h2>✅ Skript-Ausführung abgeschlossen</h2>
+        <p>Das Skript wurde trotz des Fehlers korrekt beendet.</p>
+        <p>Zeit: #{Time.now}</p>
+    </div>
+</body>
+</html>
+HTML
