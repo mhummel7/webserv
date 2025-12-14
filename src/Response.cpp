@@ -639,7 +639,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 {
    if (req.error != 0)
    {
-    std::cout << "req.error nicht 0:" << req.error << std::endl;
+    // std::cout << "req.error nicht 0:" << req.error << std::endl;
     Response res;
     res.statusCode = req.error;
     res.reasonPhrase = getStatusMessage(req.error);
@@ -660,7 +660,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
     res.headers["Content-Type"] = "text/html";
     res.headers["Content-Length"] = std::to_string(res.body.size());
     res.keep_alive = false;
-    std::cout << "ende von decode error res.status:" << res.statusCode << std::endl;
+    // std::cout << "ende von decode error res.status:" << res.statusCode << std::endl;
     return res;
     }
 

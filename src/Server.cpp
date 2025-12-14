@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: nicolewicki <nicolewicki@student.42.fr>    +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/12 13:12:32 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/14 13:06:17 by nicolewicki      ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -412,10 +412,10 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             ResponseHandler handler;
             Response res = handler.handleRequest(req, lc, sc);  // + sc (serverConfig)
 
-            std::cout << "nun sind wir im SERVER:" << res.statusCode << std::endl;
+            // std::cout << "nun sind wir im SERVER:" << res.statusCode << std::endl;
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
-            std::cout << "zum Abschluss nochmal c.tx:" << c.tx << std::endl;
+            // std::cout << "zum Abschluss nochmal c.tx:" << c.tx << std::endl;
             fds[i].events |= POLLOUT;
         }
         return true;
