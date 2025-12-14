@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/14 23:49:34 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/14 23:53:32 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -58,7 +58,6 @@ static long long get_time_ms(void)
     return (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-// Signalisierung für Timeout
 static volatile sig_atomic_t timeout_occurred = 0;
 
 static void timeout_handler(int sig)
@@ -67,25 +66,21 @@ static void timeout_handler(int sig)
     timeout_occurred = 1;
 }
 
-// Setze einen Alarm für Timeout
 static void set_timeout_alarm(size_t timeout_ms)
 {
     timeout_occurred = 0;
     
-    // Setze Signal-Handler für SIGALRM
     struct sigaction sa;
     sa.sa_handler = timeout_handler;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGALRM, &sa, NULL);
     
-    // Konvertiere Millisekunden zu Sekunden für alarm()
-    // alarm() nimmt ganze Sekunden, also aufrunden
     unsigned int seconds = (timeout_ms + 999) / 1000;
     alarm(seconds);
 }
 
-// Entferne den Alarm
+
 static void clear_timeout_alarm(void)
 {
     alarm(0);
@@ -98,7 +93,7 @@ CGIHandler::~CGIHandler() {}
 Response CGIHandler::execute(const Request& req)
 {
     Response res;
-    size_t timeout_ms = g_cfg.keepalive_timeout_ms;  // Verwende cgi_timeout, nicht keepalive_timeout
+    size_t timeout_ms = g_cfg.keepalive_timeout_ms;  // cgi_timeout vlt spaeter
 
     std::cout << "Executing CGI script: " << req.path 
               << " (timeout: " << timeout_ms << "ms)" << std::endl;
@@ -199,7 +194,6 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 
     if (pid == 0)
     {
-        // CHILD PROCESS - Kein Timeout-Handling hier
         dup2(pipeIn[0], STDIN_FILENO);
         dup2(pipeOut[1], STDOUT_FILENO);
         close(pipeIn[1]);
@@ -239,10 +233,8 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
         close(pipeIn[0]);
         close(pipeOut[1]);
 
-        // Setze Alarm für Timeout
         set_timeout_alarm(timeout_ms);
 
-        // Schreiben des Inputs (non-blocking)
         bool write_complete = true;
         if (!body.empty())
         {
@@ -253,7 +245,6 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 
             while (written < total_to_write)
             {
-                // Prüfe auf Timeout
                 if (timeout_occurred || get_time_ms() - write_start > static_cast<long long>(timeout_ms))
                 {
                     write_complete = false;
@@ -269,7 +260,6 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
                 {
                     if (errno == EAGAIN || errno == EWOULDBLOCK)
                     {
-                        // Pipe ist voll, warte kurz
                         usleep(1000);
                         continue;
                     }
@@ -292,7 +282,6 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
             return "<h1>CGI Timeout Error</h1><p>Timeout while writing to script</p>";
         }
 
-        // Lesen der Ausgabe mit Timeout
         std::string output;
         bool process_done = false;
         bool timed_out = false;
@@ -300,21 +289,18 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 
         while (!process_done && !timed_out)
         {
-            // Prüfe auf Timeout
             if (timeout_occurred || get_time_ms() - read_start > static_cast<long long>(timeout_ms))
             {
                 timed_out = true;
                 break;
             }
 
-            // Prüfe, ob Kindprozess beendet ist
             int status;
             pid_t ret = waitpid(pid, &status, WNOHANG);
             
             if (ret == pid)
             {
                 process_done = true;
-                // Lese restliche Daten
                 char buffer[4096];
                 ssize_t bytes;
                 while ((bytes = read(pipeOut[0], buffer, sizeof(buffer))) > 0)
@@ -342,30 +328,25 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
             }
             else if (ret < 0)
             {
-                // Fehler bei waitpid
                 perror("waitpid");
                 break;
             }
 
-            // Lese verfügbare Daten
             char buffer[4096];
             ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
             if (bytes > 0)
             {
                 output.append(buffer, bytes);
-                // Zurücksetzen des Timeout-Zählers bei neuen Daten
                 read_start = get_time_ms();
             }
             else if (bytes < 0)
             {
                 if (errno == EAGAIN || errno == EWOULDBLOCK)
                 {
-                    // Keine Daten verfügbar, warte kurz
-                    usleep(10000);  // 10ms
+                    usleep(10000);
                 }
                 else
                 {
-                    // Lesefehler
                     perror("read from CGI");
                     break;
                 }
@@ -393,11 +374,10 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
     }
 }
 
-// Ähnliche Änderungen für executeWith
 Response CGIHandler::executeWith(const Request& req, const std::string& execPath, const std::string& scriptFile)
 {
     Response res;
-    size_t timeout_ms = g_cfg.keepalive_timeout_ms;  // Verwende cgi_timeout
+    size_t timeout_ms = g_cfg.keepalive_timeout_ms;  // vlt cgi_timeout
 
     std::cout << "Executing CGI executable: " << execPath
               << " (script file: " << scriptFile << ")"
@@ -419,7 +399,6 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
         return res;
     }
 
-    // Setze Pipes auf non-blocking
     fcntl(pipeOut[0], F_SETFL, O_NONBLOCK);
     fcntl(pipeIn[1], F_SETFL, O_NONBLOCK);
 
@@ -458,10 +437,8 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
         close(pipeIn[0]);
         close(pipeOut[1]);
 
-        // Setze Alarm für Timeout
         set_timeout_alarm(timeout_ms);
 
-        // Schreiben mit Timeout
         bool write_complete = true;
         if (!req.body.empty())
         {

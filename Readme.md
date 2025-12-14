@@ -48,10 +48,10 @@ https://chatgpt.com/share/6932c48b-b694-800b-b22a-7e788b891dd7
 
 Subject durchgehen 
 
-Siege
+Siege !!!!! PASST NICHT
 
 Valgrind
 
 cgi skripte in html
 
-timeouts 
+timeouts // sollte passen
