@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.hpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/11/27 12:04:43 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/14 23:23:50 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -30,7 +30,7 @@ public:
 private:
 	// Hilfsfunktionen
 	std::map<std::string, std::string> buildEnv(const Request& req, const std::string& scriptPath);
-	std::string runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, const std::string& body);
+	std::string runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, const std::string& body, size_t timeout_ms);
 };
 
 #endif
