@@ -7,6 +7,7 @@ NAME := webserv
 
 SRC_DIR := src
 OBJ_DIR := obj
+DATA_DIR := root/data
 
 SRCS := \
 	src/CGIHandler.cpp \
@@ -21,15 +22,19 @@ OBJS := $(SRCS:$(SRC_DIR)/%.cpp=$(OBJ_DIR)/%.o)
 DEPFLAGS := -MMD -MP
 CXXFLAGS += $(DEPFLAGS)
 
-.PHONY: all debug clean fclean re run
+.PHONY: all debug clean fclean re run data_dir
 
 all: $(NAME)
 
 debug: CXXFLAGS += $(DBGFLAGS)
 debug: $(NAME)
 
-$(NAME): $(OBJS)
-	@$(CXX) $(CXXFLAGS) $(SANFLAGS) $^ -o $@
+.PHONY: data_dir
+data_dir:
+	@mkdir -p $(DATA_DIR)
+
+$(NAME): $(OBJS) | data_dir
+	@$(CXX) $(CXXFLAGS) $(SANFLAGS) $(OBJS) -o $@
 	@echo "Linked -> $@"
 
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp | $(OBJ_DIR)
