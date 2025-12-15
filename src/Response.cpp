@@ -729,15 +729,59 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
            filename.back() == ' ' || filename.back() == '\t')) {
         filename.pop_back();
     }
+    
+    // Entferne Whitespace vom Anfang
+    size_t start = 0;
+    while (start < filename.size() && (filename[start] == ' ' || filename[start] == '\t')) {
+        ++start;
+    }
+    if (start > 0) {
+        filename = filename.substr(start);
+    }
 
-    // 2. Sicherheitsprüfung
+    // ========================================================================
+    // FIXED: URL-decode the filename (handles %2F, %2E, etc.)
+    // ========================================================================
+    filename = urlDecode(filename);
+
+    // 2. Sicherheitsprüfung (NACH dem decoding!)
     if (filename.empty()) {
         res = makeHtmlResponse(400, "<h1>400 Bad Request - No filename specified</h1>");
         return res;
     }
 
-    if (containsPathTraversal(filename) || filename.find('/') != std::string::npos) {
+    // Check for path traversal patterns (both literal and after decoding)
+    if (containsPathTraversal(filename) || 
+        filename.find('/') != std::string::npos ||
+        filename.find('\\') != std::string::npos)
+    {
         res = makeHtmlResponse(403, "<h1>403 Forbidden - Invalid filename</h1>");
+        return res;
+    }
+    
+    // Additional security: check for NULL bytes (C-string truncation attack)
+    if (filename.find('\0') != std::string::npos)
+    {
+        res = makeHtmlResponse(403, "<h1>403 Forbidden - Invalid filename</h1>");
+        return res;
+    }
+
+    // Only allow alphanumeric, dash, underscore, dot
+    for (size_t i = 0; i < filename.size(); ++i)
+    {
+        char c = filename[i];
+        if (!isalnum(c) && c != '-' && c != '_' && c != '.')
+        {
+            res = makeHtmlResponse(403, 
+                "<h1>403 Forbidden - Filename contains invalid characters</h1>");
+            return res;
+        }
+    }
+
+    // Prevent hidden files
+    if (!filename.empty() && filename[0] == '.')
+    {
+        res = makeHtmlResponse(403, "<h1>403 Forbidden - Cannot delete hidden files</h1>");
         return res;
     }
 
@@ -762,15 +806,64 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
     std::cout << "[DELETE] Full path: " << filepath << std::endl;
     #endif
 
-    if (fileExists(filepath) && std::remove(filepath.c_str()) == 0) {
-        res.statusCode = 200;
-        res.reasonPhrase = getStatusMessage(200);
-        res.body = "<h1>File '" + filename + "' deleted successfully.</h1>";
-    } else {
+    // Final security check: ensure resolved path is still within baseDir
+    // (protects against symlink attacks)
+    char resolvedPath[PATH_MAX];
+    char resolvedBase[PATH_MAX];
+    
+    if (realpath(baseDir.c_str(), resolvedBase) == NULL)
+    {
+        res = makeHtmlResponse(500, "<h1>500 Internal Server Error</h1>");
+        return res;
+    }
+    
+    // For the file, we need to check if it exists first
+    if (!fileExists(filepath))
+    {
         res.statusCode = 404;
         res.reasonPhrase = getStatusMessage(404);
-        res.body = "<h1>404 File '" + filename + "' not found.</h1>";
+        res.body = "<h1>404 File '" + htmlEscape(filename) + "' not found.</h1>";
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        return res;
     }
+    
+    // Now resolve the file path
+    if (realpath(filepath.c_str(), resolvedPath) == NULL)
+    {
+        res = makeHtmlResponse(403, "<h1>403 Forbidden</h1>");
+        return res;
+    }
+    
+    // Check if resolved file path starts with resolved base dir
+    std::string resolvedFileStr(resolvedPath);
+    std::string resolvedBaseStr(resolvedBase);
+    
+    if (resolvedFileStr.compare(0, resolvedBaseStr.length(), resolvedBaseStr) != 0)
+    {
+        res = makeHtmlResponse(403, 
+            "<h1>403 Forbidden - File is outside allowed directory</h1>");
+        return res;
+    }
+
+    // 4. Delete the file
+    if (std::remove(filepath.c_str()) == 0)
+    {
+        res.statusCode = 200;
+        res.reasonPhrase = getStatusMessage(200);
+        res.body = "<h1>File '" + htmlEscape(filename) + "' deleted successfully.</h1>";
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+    }
+    else
+    {
+        res.statusCode = 500;
+        res.reasonPhrase = "Internal Server Error";
+        res.body = "<h1>500 Internal Server Error - Failed to delete file</h1>";
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+    }
+    
     return res;
 }
 

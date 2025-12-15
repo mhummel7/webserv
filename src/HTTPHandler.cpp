@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   HTTPHandler.cpp                                    :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/10 12:06:41 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/15 16:16:56 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -130,7 +130,57 @@ bool RequestParser::parseHeaders(const std::string& rawHeaders, Request& req)
     return true;
 }
 
-bool RequestParser::parseBody(std::istringstream& stream, Request& req, const LocationConfig& locationConfig, const ServerConfig& serverConfig)
+static bool isChunkedEncoding(const std::string& transferEncoding)
+{
+    if (transferEncoding.empty())
+        return false;
+    
+    // Convert to lowercase for case-insensitive comparison
+    std::string te = transferEncoding;
+    for (size_t i = 0; i < te.size(); ++i)
+        te[i] = std::tolower(te[i]);
+    
+    // Check if "chunked" appears anywhere in the header
+    // Handle cases like:
+    // - "chunked"
+    // - "gzip, chunked"
+    // - "chunked, gzip" (invalid per RFC, but be defensive)
+    // - "chunked;q=1.0"
+    
+    size_t pos = te.find("chunked");
+    if (pos == std::string::npos)
+        return false;
+    
+    // Ensure it's a complete word, not part of another word
+    // Check character before
+    if (pos > 0)
+    {
+        char before = te[pos - 1];
+        if (before != ' ' && before != ',' && before != '\t')
+            return false;
+    }
+    
+    // Check character after
+    size_t endPos = pos + 7; // length of "chunked"
+    if (endPos < te.size())
+    {
+        char after = te[endPos];
+        if (after != ' ' && after != ',' && after != '\t' && after != ';' && after != '\r' && after != '\n')
+            return false;
+    }
+    
+    return true;
+}
+
+// ============================================================================
+// ERSETZE in parseBody() die Zeile:
+// bool isChunked = req.headers.count("Transfer-Encoding") &&
+//                 req.headers["Transfer-Encoding"] == "chunked";
+// MIT:
+// ============================================================================
+bool RequestParser::parseBody(std::istringstream& stream, Request& req, 
+                              const LocationConfig& locationConfig, 
+                              const ServerConfig& serverConfig)
 {
     const size_t maxBody =
         (locationConfig.client_max_body_size > 0)
@@ -138,10 +188,18 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req, const Lo
         : serverConfig.client_max_body_size;
 
     // READ BODY SIZE HEADERS
-    if (req.headers.count("Transfer-Encoding") &&
-        req.headers["Transfer-Encoding"] == "chunked")
+    // FIXED: Properly check for chunked encoding (can be "gzip, chunked")
+    if (req.headers.count("Transfer-Encoding"))
     {
-        req.is_chunked = true;
+        req.is_chunked = isChunkedEncoding(req.headers["Transfer-Encoding"]);
+        
+        // RFC 2616: If Transfer-Encoding is present, Content-Length MUST be ignored
+        if (req.is_chunked && req.headers.count("Content-Length"))
+        {
+            std::cerr << "[WARNING] Both Transfer-Encoding and Content-Length present. "
+                      << "Ignoring Content-Length per RFC 2616." << std::endl;
+            req.headers.erase("Content-Length");
+        }
     }
     else if (req.headers.count("Content-Length"))
     {
