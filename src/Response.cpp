@@ -324,19 +324,27 @@ bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsP
         CGIHandler cgi;
         Response r = cgi.executeWith(req, execPath, fsPath);
 
-        r.keep_alive = req.keep_alive;
+        r.keep_alive = false;                 // <-- CGI erzwingt close
+        setHeaders(r, req);                   // <-- ABER setHeaders nutzt req.keep_alive (siehe Punkt 3)
+        r.headers["Connection"] = "close";    // <-- zur Sicherheit (weil setHeaders sonst keep-alive setzt)
+        r.headers["Keep-Alive"] = "timeout=0, max=0";
+
         if (!r.headers.count("Content-Length"))
             r.headers["Content-Length"] = std::to_string(r.body.size());
+
         res = r;
         return true;
     }
+
 
     if (isCGIRequest(fsPath)) {
         CGIHandler cgi;
         Request req_cgi = req;
         req_cgi.path = fsPath;
         res = cgi.execute(req_cgi);
-        res.keep_alive = req.keep_alive;
+        res.keep_alive = false;
+        res.headers["Connection"] = "close";
+        res.headers["Keep-Alive"] = "timeout=0, max=0";
         if (!res.headers.count("Content-Length"))
             res.headers["Content-Length"] = std::to_string(res.body.size());
         return true;
@@ -458,11 +466,18 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
     if (it != config.cgi.end())
     {
         const std::string& execPath = it->second;
+
         CGIHandler cgi;
         Response r = cgi.executeWith(req, execPath, fsPath);
-        r.keep_alive = req.keep_alive;
+
+        r.keep_alive = false;                 // <-- CGI erzwingt close
+        setHeaders(r, req);                   // <-- ABER setHeaders nutzt req.keep_alive (siehe Punkt 3)
+        r.headers["Connection"] = "close";    // <-- zur Sicherheit (weil setHeaders sonst keep-alive setzt)
+        r.headers["Keep-Alive"] = "timeout=0, max=0";
+
         if (!r.headers.count("Content-Length"))
             r.headers["Content-Length"] = std::to_string(r.body.size());
+
         res = r;
         return res;
     }
@@ -473,7 +488,9 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
         Request req_cgi = req;
         req_cgi.path = fsPath;
         res = cgi.execute(req_cgi);
-        res.keep_alive = req.keep_alive;
+        res.keep_alive = false;
+        res.headers["Connection"] = "close";
+        res.headers["Keep-Alive"] = "timeout=0, max=0";
         if (!res.headers.count("Content-Length"))
             res.headers["Content-Length"] = std::to_string(res.body.size());
         return res;
