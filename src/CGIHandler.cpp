@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/14 23:53:32 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/15 14:07:18 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -131,7 +131,7 @@ static std::string getInterpreter(const std::string& scriptPath)
     if (scriptPath.find(".py") != std::string::npos)
         return "/usr/bin/python3";
     if (scriptPath.find(".php") != std::string::npos)
-        return "/usr/local/bin/php-cgi";
+        return "/usr/bin/php-cgi";
     return "";
 }
 

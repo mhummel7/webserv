@@ -454,7 +454,6 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
     if (dot != std::string::npos)
         ext = fsPath.substr(dot);
 
-    // CGI-Mapping check
     std::map<std::string, std::string>::const_iterator it = config.cgi.find(ext);
     if (it != config.cgi.end())
     {
@@ -465,6 +464,18 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
         if (!r.headers.count("Content-Length"))
             r.headers["Content-Length"] = std::to_string(r.body.size());
         res = r;
+        return res;
+    }
+
+    if (isCGIRequest(fsPath))
+    {
+        CGIHandler cgi;
+        Request req_cgi = req;
+        req_cgi.path = fsPath;
+        res = cgi.execute(req_cgi);
+        res.keep_alive = req.keep_alive;
+        if (!res.headers.count("Content-Length"))
+            res.headers["Content-Length"] = std::to_string(res.body.size());
         return res;
     }
 
