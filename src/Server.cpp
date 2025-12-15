@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nicolewicki <nicolewicki@student.42.fr>    +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/14 13:06:17 by nicolewicki      ###   ########.fr       */
+/*   Updated: 2025/12/15 16:13:09 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -315,6 +315,31 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             return true;
         }
 
+        // ====================================================================
+        // FIXED: HTTP/1.1 requires Host header (RFC 2616 Section 14.23)
+        // ====================================================================
+        if (req.version == "HTTP/1.1")
+        {
+            if (req.headers.find("Host") == req.headers.end() || req.headers["Host"].empty())
+            {
+                ResponseHandler handler;
+                Response res = handler.makeHtmlResponse(400, 
+                    "<h1>400 Bad Request</h1><p>HTTP/1.1 requests must include a Host header</p>");
+                c.tx = res.toString();
+                fds[i].events &= ~POLLIN;
+                fds[i].events |= POLLOUT;
+                return true;
+            }
+        }
+
+        // Connection handling
+        if (req.version == "HTTP/1.1")
+            req.keep_alive = !(req.headers.count("Connection") &&
+                              req.headers["Connection"] == "close");
+        else if (req.version == "HTTP/1.0")
+            req.keep_alive = (req.headers.count("Connection") &&
+                             req.headers["Connection"] == "keep-alive");
+
         // 3) vHost bestimmen
         int port = c.listen_port;
         size_t server_idx = servers_by_port[port].front();
@@ -410,12 +435,10 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             req.conn_fd = fds[i].fd;
 
             ResponseHandler handler;
-            Response res = handler.handleRequest(req, lc, sc);  // + sc (serverConfig)
+            Response res = handler.handleRequest(req, lc, sc);
 
-            // std::cout << "nun sind wir im SERVER:" << res.statusCode << std::endl;
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
-            // std::cout << "zum Abschluss nochmal c.tx:" << c.tx << std::endl;
             fds[i].events |= POLLOUT;
         }
         return true;
@@ -430,8 +453,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         return true;
     }
 }
-
-
 
 bool Server::handleClientWrite(size_t &i, long now_ms)
 {

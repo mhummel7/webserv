@@ -3,41 +3,14 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
-/*                                                +#+#+#+#+#+   +#+           */
-/*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/15 14:07:18 by nlewicki         ###   ########.fr       */
-/*                                                                            */
-/* ************************************************************************** */
-
-#include "../include/CGIHandler.hpp"
-#include <unistd.h>
-#include <sys/wait.h>
-#include <sys/time.h>
-#include <fcntl.h>
-#include <signal.h>
-#include <sstream>
-#include <iostream>
-#include <string.h>
-#include <vector>
-#include <memory>
-#include <algorithm>
-#include <poll.h>
-
-/* ************************************************************************** */
-/*                                                                            */
-/*                                                        :::      ::::::::   */
-/*   CGIHandler.cpp                                     :+:      :+:    :+:   */
-/*                                                    +:+ +:+         +:+     */
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/14 23:39:01 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/15 16:12:28 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
 #include "../include/CGIHandler.hpp"
-#include "../include/config.hpp"  // Für g_cfg
 #include <unistd.h>
 #include <sys/wait.h>
 #include <sys/time.h>
@@ -58,42 +31,13 @@ static long long get_time_ms(void)
     return (long long)tv.tv_sec * 1000 + tv.tv_usec / 1000;
 }
 
-static volatile sig_atomic_t timeout_occurred = 0;
-
-static void timeout_handler(int sig)
-{
-    (void)sig;
-    timeout_occurred = 1;
-}
-
-static void set_timeout_alarm(size_t timeout_ms)
-{
-    timeout_occurred = 0;
-    
-    struct sigaction sa;
-    sa.sa_handler = timeout_handler;
-    sigemptyset(&sa.sa_mask);
-    sa.sa_flags = 0;
-    sigaction(SIGALRM, &sa, NULL);
-    
-    unsigned int seconds = (timeout_ms + 999) / 1000;
-    alarm(seconds);
-}
-
-
-static void clear_timeout_alarm(void)
-{
-    alarm(0);
-    timeout_occurred = 0;
-}
-
 CGIHandler::CGIHandler() {}
 CGIHandler::~CGIHandler() {}
 
 Response CGIHandler::execute(const Request& req)
 {
     Response res;
-    size_t timeout_ms = g_cfg.keepalive_timeout_ms;  // cgi_timeout vlt spaeter
+    size_t timeout_ms = g_cfg.keepalive_timeout_ms;
 
     std::cout << "Executing CGI script: " << req.path 
               << " (timeout: " << timeout_ms << "ms)" << std::endl;
@@ -172,6 +116,135 @@ static void free_envp_vec(std::vector<char*>& envp_vec)
     }
 }
 
+// ============================================================================
+// FIXED: Non-blocking write WITHOUT errno checks
+// Returns: true on success, false on timeout/error
+// ============================================================================
+static bool write_with_timeout(int fd, const std::string& data, size_t timeout_ms, long long start_time)
+{
+    if (data.empty())
+        return true;
+
+    size_t written = 0;
+    const char* buf = data.c_str();
+    size_t total = data.size();
+
+    while (written < total)
+    {
+        // Timeout check BEFORE I/O (not via errno)
+        if (get_time_ms() - start_time > static_cast<long long>(timeout_ms))
+            return false;
+
+        ssize_t n = write(fd, buf + written, total - written);
+        
+        if (n > 0)
+        {
+            written += static_cast<size_t>(n);
+        }
+        else if (n < 0)
+        {
+            // FIXED: No errno check! Just retry on EAGAIN/EWOULDBLOCK
+            // (non-blocking write returns -1 when it would block)
+            usleep(1000);  // Short sleep and retry
+            continue;
+        }
+        else // n == 0
+        {
+            // write() returned 0 -> connection closed
+            return false;
+        }
+    }
+    return true;
+}
+
+// ============================================================================
+// FIXED: Non-blocking read with poll() and WITHOUT errno checks
+// ============================================================================
+static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_t timeout_ms)
+{
+    long long read_start = get_time_ms();
+    bool process_done = false;
+    char buffer[4096];
+
+    while (!process_done)
+    {
+        // Timeout check
+        long long elapsed = get_time_ms() - read_start;
+        if (elapsed > static_cast<long long>(timeout_ms))
+            return false;
+
+        // Check if process exited
+        int status;
+        pid_t ret = waitpid(pid, &status, WNOHANG);
+        
+        if (ret == pid)
+        {
+            process_done = true;
+            
+            // Read any remaining data
+            ssize_t bytes;
+            while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)
+            {
+                output.append(buffer, static_cast<size_t>(bytes));
+            }
+            
+            // Check exit status
+            if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+            {
+                std::cerr << "CGI exited with code " << WEXITSTATUS(status) << std::endl;
+                return false;
+            }
+            if (WIFSIGNALED(status))
+            {
+                std::cerr << "CGI killed by signal " << WTERMSIG(status) << std::endl;
+                return false;
+            }
+            break;
+        }
+        else if (ret < 0)
+        {
+            perror("waitpid");
+            return false;
+        }
+
+        // Use poll() to wait for data (REQUIRED by subject!)
+        pollfd pfd;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        pfd.revents = 0;
+
+        int remaining_ms = static_cast<int>(timeout_ms - elapsed);
+        if (remaining_ms < 0) remaining_ms = 0;
+
+        int poll_ret = poll(&pfd, 1, std::min(remaining_ms, 100)); // Max 100ms chunks
+
+        if (poll_ret > 0 && (pfd.revents & POLLIN))
+        {
+            ssize_t bytes = read(fd, buffer, sizeof(buffer));
+            if (bytes > 0)
+            {
+                output.append(buffer, static_cast<size_t>(bytes));
+                read_start = get_time_ms(); // Reset timeout on successful read
+            }
+            else if (bytes == 0)
+            {
+                // EOF - but process might still be running
+                continue;
+            }
+            // FIXED: No errno check for bytes < 0!
+            // Just continue and poll() will tell us when ready
+        }
+        else if (poll_ret < 0)
+        {
+            perror("poll");
+            return false;
+        }
+        // poll_ret == 0 -> timeout, loop continues
+    }
+
+    return true;
+}
+
 std::string CGIHandler::runCGI(const std::string& scriptPath, 
                                const std::map<std::string, std::string>& env, 
                                const std::string& body,
@@ -186,7 +259,7 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
         return "<h1>CGI pipe error</h1>";
     }
 
-    // Setze Pipes auf non-blocking
+    // Set pipes to non-blocking
     fcntl(pipeOut[0], F_SETFL, O_NONBLOCK);
     fcntl(pipeIn[1], F_SETFL, O_NONBLOCK);
 
@@ -194,6 +267,7 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 
     if (pid == 0)
     {
+        // CHILD PROCESS
         dup2(pipeIn[0], STDIN_FILENO);
         dup2(pipeOut[1], STDOUT_FILENO);
         close(pipeIn[1]);
@@ -233,130 +307,27 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
         close(pipeIn[0]);
         close(pipeOut[1]);
 
-        set_timeout_alarm(timeout_ms);
+        long long start_time = get_time_ms();
 
-        bool write_complete = true;
-        if (!body.empty())
-        {
-            size_t written = 0;
-            const char* data = body.c_str();
-            size_t total_to_write = body.size();
-            long long write_start = get_time_ms();
-
-            while (written < total_to_write)
-            {
-                if (timeout_occurred || get_time_ms() - write_start > static_cast<long long>(timeout_ms))
-                {
-                    write_complete = false;
-                    break;
-                }
-
-                ssize_t bytes = write(pipeIn[1], data + written, total_to_write - written);
-                if (bytes > 0)
-                {
-                    written += bytes;
-                }
-                else if (bytes < 0)
-                {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK)
-                    {
-                        usleep(1000);
-                        continue;
-                    }
-                    else
-                    {
-                        write_complete = false;
-                        break;
-                    }
-                }
-            }
-        }
+        // FIXED: Write without errno
+        bool write_ok = write_with_timeout(pipeIn[1], body, timeout_ms, start_time);
         close(pipeIn[1]);
 
-        if (!write_complete)
+        if (!write_ok)
         {
-            clear_timeout_alarm();
             kill(pid, SIGKILL);
             close(pipeOut[0]);
             waitpid(pid, NULL, 0);
             return "<h1>CGI Timeout Error</h1><p>Timeout while writing to script</p>";
         }
 
+        // FIXED: Read with poll() and without errno
         std::string output;
-        bool process_done = false;
-        bool timed_out = false;
-        long long read_start = get_time_ms();
-
-        while (!process_done && !timed_out)
-        {
-            if (timeout_occurred || get_time_ms() - read_start > static_cast<long long>(timeout_ms))
-            {
-                timed_out = true;
-                break;
-            }
-
-            int status;
-            pid_t ret = waitpid(pid, &status, WNOHANG);
-            
-            if (ret == pid)
-            {
-                process_done = true;
-                char buffer[4096];
-                ssize_t bytes;
-                while ((bytes = read(pipeOut[0], buffer, sizeof(buffer))) > 0)
-                {
-                    output.append(buffer, bytes);
-                }
-                
-                if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
-                {
-                    std::cerr << "CGI exited with code " << WEXITSTATUS(status) << std::endl;
-                    clear_timeout_alarm();
-                    close(pipeOut[0]);
-                    return "<h1>CGI Error</h1><p>Script exited with error code " 
-                           + std::to_string(WEXITSTATUS(status)) + "</p>";
-                }
-                if (WIFSIGNALED(status))
-                {
-                    std::cerr << "CGI killed by signal " << WTERMSIG(status) << std::endl;
-                    clear_timeout_alarm();
-                    close(pipeOut[0]);
-                    return "<h1>CGI Crashed</h1><p>Script killed by signal " 
-                           + std::to_string(WTERMSIG(status)) + "</p>";
-                }
-                break;
-            }
-            else if (ret < 0)
-            {
-                perror("waitpid");
-                break;
-            }
-
-            char buffer[4096];
-            ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
-            if (bytes > 0)
-            {
-                output.append(buffer, bytes);
-                read_start = get_time_ms();
-            }
-            else if (bytes < 0)
-            {
-                if (errno == EAGAIN || errno == EWOULDBLOCK)
-                {
-                    usleep(10000);
-                }
-                else
-                {
-                    perror("read from CGI");
-                    break;
-                }
-            }
-        }
-
-        clear_timeout_alarm();
+        bool read_ok = read_with_poll_timeout(pipeOut[0], output, pid, timeout_ms);
+        
         close(pipeOut[0]);
 
-        if (timed_out)
+        if (!read_ok)
         {
             kill(pid, SIGKILL);
             waitpid(pid, NULL, 0);
@@ -377,7 +348,7 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 Response CGIHandler::executeWith(const Request& req, const std::string& execPath, const std::string& scriptFile)
 {
     Response res;
-    size_t timeout_ms = g_cfg.keepalive_timeout_ms;  // vlt cgi_timeout
+    size_t timeout_ms = g_cfg.keepalive_timeout_ms;
 
     std::cout << "Executing CGI executable: " << execPath
               << " (script file: " << scriptFile << ")"
@@ -437,49 +408,14 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
         close(pipeIn[0]);
         close(pipeOut[1]);
 
-        set_timeout_alarm(timeout_ms);
+        long long start_time = get_time_ms();
 
-        bool write_complete = true;
-        if (!req.body.empty())
-        {
-            size_t written = 0;
-            const char* data = req.body.c_str();
-            size_t total_to_write = req.body.size();
-            long long write_start = get_time_ms();
-
-            while (written < total_to_write)
-            {
-                if (timeout_occurred || get_time_ms() - write_start > static_cast<long long>(timeout_ms))
-                {
-                    write_complete = false;
-                    break;
-                }
-
-                ssize_t bytes = write(pipeIn[1], data + written, total_to_write - written);
-                if (bytes > 0)
-                {
-                    written += bytes;
-                }
-                else if (bytes < 0)
-                {
-                    if (errno == EAGAIN || errno == EWOULDBLOCK)
-                    {
-                        usleep(1000);
-                        continue;
-                    }
-                    else
-                    {
-                        write_complete = false;
-                        break;
-                    }
-                }
-            }
-        }
+        // FIXED: Write without errno
+        bool write_ok = write_with_timeout(pipeIn[1], req.body, timeout_ms, start_time);
         close(pipeIn[1]);
 
-        if (!write_complete)
+        if (!write_ok)
         {
-            clear_timeout_alarm();
             kill(pid, SIGKILL);
             close(pipeOut[0]);
             waitpid(pid, NULL, 0);
@@ -492,94 +428,13 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
             return res;
         }
 
-        // Lesen mit Timeout
+        // FIXED: Read with poll() and without errno
         std::string output;
-        bool process_done = false;
-        bool timed_out = false;
-        long long read_start = get_time_ms();
-
-        while (!process_done && !timed_out)
-        {
-            if (timeout_occurred || get_time_ms() - read_start > static_cast<long long>(timeout_ms))
-            {
-                timed_out = true;
-                break;
-            }
-
-            int status;
-            pid_t ret = waitpid(pid, &status, WNOHANG);
-            
-            if (ret == pid)
-            {
-                process_done = true;
-                char buffer[4096];
-                ssize_t bytes;
-                while ((bytes = read(pipeOut[0], buffer, sizeof(buffer))) > 0)
-                {
-                    output.append(buffer, bytes);
-                }
-                
-                if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
-                {
-                    std::cerr << "CGI exited with code " << WEXITSTATUS(status) << std::endl;
-                    clear_timeout_alarm();
-                    close(pipeOut[0]);
-                    
-                    res.statusCode = 500;
-                    res.reasonPhrase = "Internal Server Error";
-                    res.body = "<h1>CGI Error</h1><p>Script exited with error code " 
-                               + std::to_string(WEXITSTATUS(status)) + "</p>";
-                    res.headers["Content-Length"] = std::to_string(res.body.size());
-                    res.headers["Content-Type"] = "text/html";
-                    return res;
-                }
-                if (WIFSIGNALED(status))
-                {
-                    std::cerr << "CGI killed by signal " << WTERMSIG(status) << std::endl;
-                    clear_timeout_alarm();
-                    close(pipeOut[0]);
-                    
-                    res.statusCode = 500;
-                    res.reasonPhrase = "Internal Server Error";
-                    res.body = "<h1>CGI Crashed</h1><p>Script killed by signal " 
-                               + std::to_string(WTERMSIG(status)) + "</p>";
-                    res.headers["Content-Length"] = std::to_string(res.body.size());
-                    res.headers["Content-Type"] = "text/html";
-                    return res;
-                }
-                break;
-            }
-            else if (ret < 0)
-            {
-                perror("waitpid");
-                break;
-            }
-
-            char buffer[4096];
-            ssize_t bytes = read(pipeOut[0], buffer, sizeof(buffer));
-            if (bytes > 0)
-            {
-                output.append(buffer, bytes);
-                read_start = get_time_ms();
-            }
-            else if (bytes < 0)
-            {
-                if (errno == EAGAIN || errno == EWOULDBLOCK)
-                {
-                    usleep(10000);
-                }
-                else
-                {
-                    perror("read from CGI");
-                    break;
-                }
-            }
-        }
-
-        clear_timeout_alarm();
+        bool read_ok = read_with_poll_timeout(pipeOut[0], output, pid, timeout_ms);
+        
         close(pipeOut[0]);
         
-        if (timed_out)
+        if (!read_ok)
         {
             kill(pid, SIGKILL);
             waitpid(pid, NULL, 0);

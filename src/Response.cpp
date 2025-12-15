@@ -157,25 +157,136 @@ static std::string getMimeType(const std::string& path)
     return "application/octet-stream";
 }
 
-// Generiere einfaches Verzeichnis-Listing (HTML)
+static std::string htmlEscape(const std::string& str)
+{
+    std::string result;
+    result.reserve(str.size() * 1.2); // Reserve a bit more for escaped chars
+    
+    for (size_t i = 0; i < str.size(); ++i)
+    {
+        switch (str[i])
+        {
+            case '&':  result += "&amp;";   break;
+            case '<':  result += "&lt;";    break;
+            case '>':  result += "&gt;";    break;
+            case '"':  result += "&quot;";  break;
+            case '\'': result += "&#39;";   break;
+            default:   result += str[i];    break;
+        }
+    }
+    return result;
+}
+
+// URL-encode (simple) - ERWEITERE DIE EXISTIERENDE FUNKTION
+static std::string urlEncode(const std::string& s)
+{
+    std::ostringstream escaped;
+    escaped.fill('0');
+    escaped << std::hex;
+
+    for (size_t i = 0; i < s.size(); ++i)
+    {
+        unsigned char c = s[i];
+        
+        // Keep alphanumeric and safe chars
+        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')
+        {
+            escaped << c;
+        }
+        else if (c == ' ')
+        {
+            escaped << '+';
+        }
+        else
+        {
+            escaped << '%' << std::setw(2) << int(c);
+        }
+    }
+    
+    return escaped.str();
+}
+
+// ============================================================================
+// FIXED: Directory Listing with proper HTML escaping
+// ============================================================================
 static std::string generateDirectoryListing(const std::string& dirPath, const std::string& urlPrefix)
 {
     DIR* dp = opendir(dirPath.c_str());
     if (!dp) return "<h1>500 Cannot open directory</h1>";
+    
+    std::string escapedPrefix = htmlEscape(urlPrefix);
+    
     std::ostringstream out;
-    out << "<!doctype html><html><head><meta charset=\"utf-8\"><title>Index of "
-        << urlPrefix << "</title></head><body>";
-    out << "<h1>Index of " << urlPrefix << "</h1><ul>";
+    out << "<!doctype html><html><head><meta charset=\"utf-8\">"
+        << "<title>Index of " << escapedPrefix << "</title>"
+        << "<style>"
+        << "body { font-family: Arial, sans-serif; margin: 20px; }"
+        << "h1 { color: #333; }"
+        << "ul { list-style: none; padding: 0; }"
+        << "li { padding: 5px 0; }"
+        << "a { text-decoration: none; color: #0066cc; }"
+        << "a:hover { text-decoration: underline; }"
+        << "</style>"
+        << "</head><body>";
+    
+    out << "<h1>Index of " << escapedPrefix << "</h1><ul>";
+    
+    // Add parent directory link if not root
+    if (urlPrefix != "/")
+    {
+        std::string parentPath = urlPrefix;
+        size_t lastSlash = parentPath.find_last_of('/');
+        if (lastSlash != std::string::npos && lastSlash > 0)
+            parentPath = parentPath.substr(0, lastSlash);
+        else
+            parentPath = "/";
+        
+        out << "<li><a href=\"" << htmlEscape(parentPath) << "\">..</a></li>";
+    }
+    
     struct dirent* e;
-    while ((e = readdir(dp)) != NULL) {
+    std::vector<std::string> entries;
+    
+    // Collect all entries first for sorting
+    while ((e = readdir(dp)) != NULL)
+    {
         std::string name = e->d_name;
         if (name == "." || name == "..") continue;
-        // Escape name? minimal:
-        out << "<li><a href=\"" << (urlPrefix.back()=='/'? urlPrefix : urlPrefix + "/") << name << "\">"
-            << name << "</a></li>";
+        entries.push_back(name);
     }
-    out << "</ul></body></html>";
     closedir(dp);
+    
+    // Sort entries
+    std::sort(entries.begin(), entries.end());
+    
+    // Generate HTML for each entry
+    for (size_t i = 0; i < entries.size(); ++i)
+    {
+        const std::string& name = entries[i];
+        
+        // Build URL: ensure proper slash handling
+        std::string itemUrl = urlPrefix;
+        if (itemUrl.back() != '/') itemUrl += '/';
+        itemUrl += urlEncode(name);  // URL-encode for href
+        
+        // Check if it's a directory
+        std::string fullPath = dirPath;
+        if (fullPath.back() != '/') fullPath += '/';
+        fullPath += name;
+        
+        bool isDir = false;
+        struct stat st;
+        if (stat(fullPath.c_str(), &st) == 0)
+            isDir = S_ISDIR(st.st_mode);
+        
+        std::string displayName = htmlEscape(name);  // HTML-escape for display
+        if (isDir) displayName += "/";
+        
+        out << "<li><a href=\"" << htmlEscape(itemUrl) << "\">" 
+            << displayName << "</a></li>";
+    }
+    
+    out << "</ul></body></html>";
     return out.str();
 }
 
