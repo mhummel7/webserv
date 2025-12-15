@@ -21,8 +21,8 @@
 #include <dirent.h>
 #include <algorithm>
 #include <cctype>
-#include "../include/config.hpp"  // Für g_cfg (global Config)
-#include "../include/Server.hpp"  // Für ServerConfig (falls nicht schon da)
+#include "../include/config.hpp"
+#include "../include/Server.hpp"
 
 
 ResponseHandler::ResponseHandler() {}
@@ -33,9 +33,9 @@ std::string Response::toString() const
 {
     std::ostringstream ss;
     ss << "HTTP/1.1 " << statusCode << " " << reasonPhrase << "\r\n";
-	for (size_t i = 0; i < set_cookies.size(); ++i)																// set cookies
+	for (size_t i = 0; i < set_cookies.size(); ++i)
         ss << "Set-Cookie: " << set_cookies[i] << "\r\n";
-    for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it)	// headers
+    for (std::map<std::string, std::string>::const_iterator it = headers.begin(); it != headers.end(); ++it)
         ss << it->first << ": " << it->second << "\r\n";
     ss << "\r\n";
     ss << body;
@@ -51,42 +51,35 @@ void Response::setCookie(const std::string& name, const std::string& value, cons
 	if (maxAge >= 0) sc << "; Max-Age=" << maxAge;
 	if (!path.empty()) sc << "; Path=" << path;
 	if (httpOnly) sc << "; HttpOnly";
-	if (!sameSite.empty()) sc << "; SameSite=" << sameSite; // "Lax"|"Strict"|"None"
+	if (!sameSite.empty()) sc << "; SameSite=" << sameSite;
 	set_cookies.push_back(sc.str());
 }
 
 static bool isCGIRequest(const std::string& path)
 {
-    // Arbeitskopie
     std::string p = path;
 
-    // Entferne CR/LF und führende/trailing whitespace
     while (!p.empty() && (p.back() == '\r' || p.back() == '\n' || isspace((unsigned char)p.back())))
         p.pop_back();
     size_t start = 0;
     while (start < p.size() && isspace((unsigned char)p[start])) ++start;
     if (start) p = p.substr(start);
 
-    // Entferne Query-String / Fragment (teile nach ? oder #)
     size_t q = p.find_first_of("?#");
     if (q != std::string::npos) p.resize(q);
 
-    // Nimm nur letzten Pfad-Element (falls ein voller Pfad übergeben wurde)
     size_t lastSlash = p.find_last_of('/');
     std::string last = (lastSlash == std::string::npos) ? p : p.substr(lastSlash + 1);
 
-    // Finde Extension
     size_t dot = last.find_last_of('.');
     if (dot == std::string::npos) return false;
     std::string ext = last.substr(dot + 1);
 
-    // lowercase
     std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
     return (ext == "py" || ext == "php" || ext == "cgi");
 }
 
-// URL-decode (simple)
 static std::string urlDecode(const std::string& s) {
     std::string ret;
     ret.reserve(s.size());
@@ -104,7 +97,6 @@ static std::string urlDecode(const std::string& s) {
     return ret;
 }
 
-// Normiert Pfad: entfernt doppelte Slashes, einfache Normalisierung
 static std::string normalizePath(const std::string& path) {
     std::string out;
     out.reserve(path.size());
@@ -116,7 +108,7 @@ static std::string normalizePath(const std::string& path) {
             out += c; lastSlash = false;
         }
     }
-    if (out.size() > 1 && out.back() == '/') out.pop_back(); // entferne letzten Slash (außer "/" selbst)
+    if (out.size() > 1 && out.back() == '/') out.pop_back();
     if (out.empty()) out = "/";
     return out;
 }
@@ -126,7 +118,6 @@ static bool containsPathTraversal(const std::string& s) {
     return false;
 }
 
-// Einfaches join (achtet auf Slashes)
 static std::string joinPath(const std::string& a, const std::string& b)
 {
     if (a.empty()) return b;
@@ -137,7 +128,7 @@ static std::string joinPath(const std::string& a, const std::string& b)
     return out;
 }
 
-// MIME-Mapping (erweiterbar)
+// MIME-Mapping
 static std::string getMimeType(const std::string& path)
 {
     static const std::map<std::string, std::string> m = {
@@ -160,7 +151,7 @@ static std::string getMimeType(const std::string& path)
 static std::string htmlEscape(const std::string& str)
 {
     std::string result;
-    result.reserve(str.size() * 1.2); // Reserve a bit more for escaped chars
+    result.reserve(str.size() * 1.2);
     
     for (size_t i = 0; i < str.size(); ++i)
     {
@@ -177,7 +168,6 @@ static std::string htmlEscape(const std::string& str)
     return result;
 }
 
-// URL-encode (simple) - ERWEITERE DIE EXISTIERENDE FUNKTION
 static std::string urlEncode(const std::string& s)
 {
     std::ostringstream escaped;
@@ -188,7 +178,6 @@ static std::string urlEncode(const std::string& s)
     {
         unsigned char c = s[i];
         
-        // Keep alphanumeric and safe chars
         if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~')
         {
             escaped << c;
@@ -206,9 +195,6 @@ static std::string urlEncode(const std::string& s)
     return escaped.str();
 }
 
-// ============================================================================
-// FIXED: Directory Listing with proper HTML escaping
-// ============================================================================
 static std::string generateDirectoryListing(const std::string& dirPath, const std::string& urlPrefix)
 {
     DIR* dp = opendir(dirPath.c_str());
@@ -231,7 +217,6 @@ static std::string generateDirectoryListing(const std::string& dirPath, const st
     
     out << "<h1>Index of " << escapedPrefix << "</h1><ul>";
     
-    // Add parent directory link if not root
     if (urlPrefix != "/")
     {
         std::string parentPath = urlPrefix;
@@ -264,10 +249,9 @@ static std::string generateDirectoryListing(const std::string& dirPath, const st
     {
         const std::string& name = entries[i];
         
-        // Build URL: ensure proper slash handling
         std::string itemUrl = urlPrefix;
         if (itemUrl.back() != '/') itemUrl += '/';
-        itemUrl += urlEncode(name);  // URL-encode for href
+        itemUrl += urlEncode(name);
         
         // Check if it's a directory
         std::string fullPath = dirPath;
@@ -279,7 +263,7 @@ static std::string generateDirectoryListing(const std::string& dirPath, const st
         if (stat(fullPath.c_str(), &st) == 0)
             isDir = S_ISDIR(st.st_mode);
         
-        std::string displayName = htmlEscape(name);  // HTML-escape for display
+        std::string displayName = htmlEscape(name);
         if (isDir) displayName += "/";
         
         out << "<li><a href=\"" << htmlEscape(itemUrl) << "\">" 
@@ -290,7 +274,6 @@ static std::string generateDirectoryListing(const std::string& dirPath, const st
     return out.str();
 }
 
-// check file or dir via stat
 static bool isDirectory(const std::string& path) {
     struct stat st;
     if (stat(path.c_str(), &st) != 0) return false;
@@ -313,9 +296,9 @@ std::string ResponseHandler::loadErrorPage(const std::string& errorPath, const s
     if (errorPath.empty()) {
         return fallbackHtml;
     }
-    std::string errorBase = "./root/";  // Fixed base for error pages
+    std::string errorBase = "./root/";
     std::string relPath = errorPath;
-    if (!relPath.empty() && relPath[0] == '/') relPath = relPath.substr(1);  // Trim leading /
+    if (!relPath.empty() && relPath[0] == '/') relPath = relPath.substr(1);
     std::string fullPath = errorBase + relPath;
     if (fileExists(fullPath)) {
         return readFile(fullPath);
@@ -355,9 +338,7 @@ static std::string sanitizeColor(const std::string& raw)
 {
     if (raw.empty()) return "";
     std::string s = raw;
-    // if percent-encoded, decode first
     s = urlDecode(s);
-    // allow "#rrggbb" or "rrggbb"
     if (s.size() == 6 && s[0] != '#') s = "#" + s;
     if (s.size() != 7) return "";
     for (size_t i = 1; i < s.size(); ++i) {
@@ -376,7 +357,6 @@ static std::string cookieColor(const Request& req)
     return "";
 }
 
-// response with given status and body (keeps Content-Type html by default)
 Response ResponseHandler::makeHtmlResponse(int status, const std::string& body)
 {
     Response r;
@@ -388,7 +368,6 @@ Response ResponseHandler::makeHtmlResponse(int status, const std::string& body)
     return r;
 }
 
-// handle directory: index file, autoindex, or forbidden
 bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::string& fsPath,
                                    const LocationConfig& config, Response& res)
 {
@@ -409,19 +388,17 @@ bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::
         res.headers["Content-Length"] = std::to_string(res.body.size());
         return true;
     }
-    // index disabled
     res = makeHtmlResponse(404, "<h1>404 Not Found</h1>");
     return true;
 }
 
-// handle static file or CGI. returns true if handled (res filled), false if not found.
+
 bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsPath,
                             const LocationConfig& config, Response& res)
 {
     if (!fileExists(fsPath))
         return false;
 
-    // Extension bestimmen (inklusive Punkt: ".bla")
     std::string ext;
     size_t dot = fsPath.find_last_of('.');
     if (dot != std::string::npos)
@@ -435,9 +412,9 @@ bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsP
         CGIHandler cgi;
         Response r = cgi.executeWith(req, execPath, fsPath);
 
-        r.keep_alive = false;                 // <-- CGI erzwingt close
-        setHeaders(r, req);                   // <-- ABER setHeaders nutzt req.keep_alive (siehe Punkt 3)
-        r.headers["Connection"] = "close";    // <-- zur Sicherheit (weil setHeaders sonst keep-alive setzt)
+        r.keep_alive = false;
+        setHeaders(r, req);
+        r.headers["Connection"] = "close";
         r.headers["Keep-Alive"] = "timeout=0, max=0";
 
         if (!r.headers.count("Content-Length"))
@@ -581,9 +558,9 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
         CGIHandler cgi;
         Response r = cgi.executeWith(req, execPath, fsPath);
 
-        r.keep_alive = false;                 // <-- CGI erzwingt close
-        setHeaders(r, req);                   // <-- ABER setHeaders nutzt req.keep_alive (siehe Punkt 3)
-        r.headers["Connection"] = "close";    // <-- zur Sicherheit (weil setHeaders sonst keep-alive setzt)
+        r.keep_alive = false;
+        setHeaders(r, req);
+        r.headers["Connection"] = "close";
         r.headers["Keep-Alive"] = "timeout=0, max=0";
 
         if (!r.headers.count("Content-Length"))
@@ -721,16 +698,13 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
     std::cout << "[DELETE] Config root: " << config.root << std::endl;
     #endif
 
-    // 1. Dateiname aus dem Body extrahieren (Whitespace entfernen!)
     std::string filename = req.body;
 
-    // Entferne Newlines und Whitespace vom Ende
     while (!filename.empty() && (filename.back() == '\r' || filename.back() == '\n' ||
            filename.back() == ' ' || filename.back() == '\t')) {
         filename.pop_back();
     }
     
-    // Entferne Whitespace vom Anfang
     size_t start = 0;
     while (start < filename.size() && (filename[start] == ' ' || filename[start] == '\t')) {
         ++start;
@@ -739,18 +713,14 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
         filename = filename.substr(start);
     }
 
-    // ========================================================================
-    // FIXED: URL-decode the filename (handles %2F, %2E, etc.)
-    // ========================================================================
     filename = urlDecode(filename);
 
-    // 2. Sicherheitsprüfung (NACH dem decoding!)
     if (filename.empty()) {
         res = makeHtmlResponse(400, "<h1>400 Bad Request - No filename specified</h1>");
         return res;
     }
 
-    // Check for path traversal patterns (both literal and after decoding)
+    // Check for path traversal patterns
     if (containsPathTraversal(filename) || 
         filename.find('/') != std::string::npos ||
         filename.find('\\') != std::string::npos)
@@ -795,7 +765,6 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
         baseDir = "./root/data";
     }
 
-    // Sicherstellen, dass baseDir mit / endet
     if (!baseDir.empty() && baseDir.back() != '/') {
         baseDir += "/";
     }
@@ -806,8 +775,6 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
     std::cout << "[DELETE] Full path: " << filepath << std::endl;
     #endif
 
-    // Final security check: ensure resolved path is still within baseDir
-    // (protects against symlink attacks)
     char resolvedPath[PATH_MAX];
     char resolvedBase[PATH_MAX];
     
@@ -817,7 +784,7 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
         return res;
     }
     
-    // For the file, we need to check if it exists first
+    // check if it exists first
     if (!fileExists(filepath))
     {
         res.statusCode = 404;
@@ -846,7 +813,6 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
         return res;
     }
 
-    // 4. Delete the file
     if (std::remove(filepath.c_str()) == 0)
     {
         res.statusCode = 200;

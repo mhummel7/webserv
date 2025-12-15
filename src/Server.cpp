@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/15 16:13:09 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/15 16:43:53 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -295,14 +295,12 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         c.last_active_ms = now_ms;
         c.rx.append(buf, n);
 
-        // 1) Header-Ende suchen
         size_t headerEnd = c.rx.find("\r\n\r\n");
         if (headerEnd == std::string::npos)
-            return true; // Header noch nicht vollständig
+            return true;
 
         std::string headers = c.rx.substr(0, headerEnd + 4);
 
-        // 2) Kopf (Request Line + Header) parsen
         RequestParser parser;
         Request req;
         if (!parser.parseHeaders(headers, req))
@@ -315,9 +313,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             return true;
         }
 
-        // ====================================================================
-        // FIXED: HTTP/1.1 requires Host header (RFC 2616 Section 14.23)
-        // ====================================================================
         if (req.version == "HTTP/1.1")
         {
             if (req.headers.find("Host") == req.headers.end() || req.headers["Host"].empty())
@@ -361,10 +356,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         c.server_idx = server_idx;
         const ServerConfig& sc = g_cfg.servers[server_idx];
 
-        // 4) Location bestimmen
         const LocationConfig& lc = resolve_location(sc, req.path);
 
-        // 5. Early Check für Content-Length (falls nicht chunked)
         bool isChunked = req.headers.count("Transfer-Encoding") &&
                         req.headers["Transfer-Encoding"] == "chunked";
 
@@ -384,26 +377,24 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             }
         }
 
-        // 6) Gesamten Request-Body warten
-        size_t totalNeeded = headerEnd + 4; // Header + Leerzeile
+        size_t totalNeeded = headerEnd + 4;
         size_t bodyStart = headerEnd + 4;
 
         if (isChunked) {
             size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
             if (endMarker == std::string::npos)
-                return true; // Chunked Body noch nicht komplett
-            totalNeeded = endMarker + 5; // inkl. "0\r\n\r\n"
+                return true; 
+            totalNeeded = endMarker + 5;
         } else {
             totalNeeded += contentLength;
             if (c.rx.size() < totalNeeded)
-                return true; // Body noch nicht komplett da
+                return true;
         }
 
-        // 7) Vollständigen Request parsen (inkl. Body)
         std::string fullRequest = c.rx.substr(0, totalNeeded);
         std::istringstream stream(fullRequest);
 
-        // Skip Headers (bereits geparst)
+        // Skip Headers
         std::string line;
         while (std::getline(stream, line)) {
             if (!line.empty() && line.back() == '\r')
@@ -412,7 +403,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 break;
         }
 
-        // 8. Body mit den neuen Parser-Funktionen parsen
+
         if (!parser.parseBody(stream, req, lc, sc)) {
             // Fehler beim Body-Parsing (413 oder 400)
             // req.error ist bereits gesetzt
@@ -426,10 +417,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         c.state  = RxState::READY;
         c.target = req.path;
 
-        // Verbrauchte Bytes entfernen
         c.rx.erase(0, totalNeeded);
 
-        // 9) Response generieren
         if (c.state == RxState::READY && c.tx.empty())
         {
             req.conn_fd = fds[i].fd;

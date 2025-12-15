@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/15 16:12:28 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/15 16:46:11 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -116,10 +116,6 @@ static void free_envp_vec(std::vector<char*>& envp_vec)
     }
 }
 
-// ============================================================================
-// FIXED: Non-blocking write WITHOUT errno checks
-// Returns: true on success, false on timeout/error
-// ============================================================================
 static bool write_with_timeout(int fd, const std::string& data, size_t timeout_ms, long long start_time)
 {
     if (data.empty())
@@ -131,7 +127,6 @@ static bool write_with_timeout(int fd, const std::string& data, size_t timeout_m
 
     while (written < total)
     {
-        // Timeout check BEFORE I/O (not via errno)
         if (get_time_ms() - start_time > static_cast<long long>(timeout_ms))
             return false;
 
@@ -143,23 +138,17 @@ static bool write_with_timeout(int fd, const std::string& data, size_t timeout_m
         }
         else if (n < 0)
         {
-            // FIXED: No errno check! Just retry on EAGAIN/EWOULDBLOCK
-            // (non-blocking write returns -1 when it would block)
-            usleep(1000);  // Short sleep and retry
+            usleep(1000);
             continue;
         }
-        else // n == 0
+        else
         {
-            // write() returned 0 -> connection closed
             return false;
         }
     }
     return true;
 }
 
-// ============================================================================
-// FIXED: Non-blocking read with poll() and WITHOUT errno checks
-// ============================================================================
 static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_t timeout_ms)
 {
     long long read_start = get_time_ms();
@@ -207,7 +196,6 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
             return false;
         }
 
-        // Use poll() to wait for data (REQUIRED by subject!)
         pollfd pfd;
         pfd.fd = fd;
         pfd.events = POLLIN;
@@ -216,7 +204,7 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
         int remaining_ms = static_cast<int>(timeout_ms - elapsed);
         if (remaining_ms < 0) remaining_ms = 0;
 
-        int poll_ret = poll(&pfd, 1, std::min(remaining_ms, 100)); // Max 100ms chunks
+        int poll_ret = poll(&pfd, 1, std::min(remaining_ms, 100));
 
         if (poll_ret > 0 && (pfd.revents & POLLIN))
         {
@@ -224,31 +212,24 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
             if (bytes > 0)
             {
                 output.append(buffer, static_cast<size_t>(bytes));
-                read_start = get_time_ms(); // Reset timeout on successful read
+                read_start = get_time_ms(); 
             }
             else if (bytes == 0)
             {
-                // EOF - but process might still be running
                 continue;
             }
-            // FIXED: No errno check for bytes < 0!
-            // Just continue and poll() will tell us when ready
         }
         else if (poll_ret < 0)
         {
             perror("poll");
             return false;
         }
-        // poll_ret == 0 -> timeout, loop continues
     }
 
     return true;
 }
 
-std::string CGIHandler::runCGI(const std::string& scriptPath, 
-                               const std::map<std::string, std::string>& env, 
-                               const std::string& body,
-                               size_t timeout_ms)
+std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, const std::string& body, size_t timeout_ms)
 {
     int pipeIn[2];
     int pipeOut[2];
@@ -259,7 +240,6 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
         return "<h1>CGI pipe error</h1>";
     }
 
-    // Set pipes to non-blocking
     fcntl(pipeOut[0], F_SETFL, O_NONBLOCK);
     fcntl(pipeIn[1], F_SETFL, O_NONBLOCK);
 
@@ -309,7 +289,6 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
 
         long long start_time = get_time_ms();
 
-        // FIXED: Write without errno
         bool write_ok = write_with_timeout(pipeIn[1], body, timeout_ms, start_time);
         close(pipeIn[1]);
 
@@ -321,7 +300,6 @@ std::string CGIHandler::runCGI(const std::string& scriptPath,
             return "<h1>CGI Timeout Error</h1><p>Timeout while writing to script</p>";
         }
 
-        // FIXED: Read with poll() and without errno
         std::string output;
         bool read_ok = read_with_poll_timeout(pipeOut[0], output, pid, timeout_ms);
         
@@ -410,7 +388,6 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
 
         long long start_time = get_time_ms();
 
-        // FIXED: Write without errno
         bool write_ok = write_with_timeout(pipeIn[1], req.body, timeout_ms, start_time);
         close(pipeIn[1]);
 
@@ -428,7 +405,6 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
             return res;
         }
 
-        // FIXED: Read with poll() and without errno
         std::string output;
         bool read_ok = read_with_poll_timeout(pipeOut[0], output, pid, timeout_ms);
         
