@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:22 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/15 16:16:56 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/16 11:50:16 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -24,49 +24,57 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out,  std::stri
     std::string line;
     size_t totalSize = 0;
 
-    while (true) {
-        // Lese die Size-Line
-        if (!std::getline(stream, line)) {
+    while (true)
+    {
+        if (!std::getline(stream, line))
+        {
             err = "unexpected EOF reading chunk size";
             return false;
         }
-        if (!line.empty() && line.back() == '\r') line.pop_back();
+        if (!line.empty() && line.back() == '\r')
+            line.pop_back();
 
-        // Ignore empty lines
-        if (line.empty()) continue;
+        if (line.empty())
+            continue;
 
         size_t sem = line.find(';');
         std::string sizeStr = (sem == std::string::npos) ? line : line.substr(0, sem);
 
         size_t chunkSize = 0;
-        try {
+        try
+        {
             chunkSize = std::stoul(sizeStr, nullptr, 16);
-        } catch (...) {
+        }
+        catch (...)
+        {
             err = "invalid chunk size";
             return false;
         }
 
-        if (chunkSize == 0) {
-            // Letzte Chunk
-            while (std::getline(stream, line)) {
-                if (!line.empty() && line.back() == '\r') line.pop_back();
-                if (line.empty()) break;
+        if (chunkSize == 0)
+        {
+            while (std::getline(stream, line))
+            {
+                if (!line.empty() && line.back() == '\r')
+                    line.pop_back();
+                if (line.empty())
+                    break;
             }
             return true;
         }
 
-        // NEU: Prüfe, ob dieses Chunk das Limit überschreitet
-        if (maxSize > 0 && totalSize + chunkSize > maxSize) {
+        if (maxSize > 0 && totalSize + chunkSize > maxSize)
+        {
             err = "chunked body too large (max: " + std::to_string(maxSize) + ")";
             return false;
         }
 
-        // Lese Chunk
         std::string chunk;
         chunk.resize(chunkSize);
         stream.read(&chunk[0], static_cast<std::streamsize>(chunkSize));
         std::streamsize got = stream.gcount();
-        if (static_cast<size_t>(got) != chunkSize) {
+        if (static_cast<size_t>(got) != chunkSize)
+        {
             err = "incomplete chunk data";
             return false;
         }
@@ -74,20 +82,24 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out,  std::stri
         out.append(chunk);
         totalSize += chunkSize;
 
-        // NEU: Nach dem Hinzufügen nochmal prüfen (falls maxSize 0 war)
-        if (maxSize > 0 && totalSize > maxSize) {
+        if (maxSize > 0 && totalSize > maxSize)
+        {
             err = "chunked body too large (max: " + std::to_string(maxSize) + ")";
             return false;
         }
 
-        // Chunk Terminator
         int c1 = stream.get();
         if (c1 == EOF) { err = "missing chunk terminator (EOF)"; return false; }
         if (c1 == '\n') continue;
         if (c1 == '\r') {
             int c2 = stream.get();
-            if (c2 == EOF) { err = "missing chunk terminator (EOF)"; return false; }
-            if (c2 == '\n') continue;
+            if (c2 == EOF)
+            {
+                err = "missing chunk terminator (EOF)";
+                return false;
+            }
+            if (c2 == '\n')
+                continue;
             err = "invalid chunk terminator";
             return false;
         }
@@ -97,7 +109,6 @@ static bool decodeChunkedBody(std::istream& stream, std::string& out,  std::stri
     return true;
 }
 
-// In RequestParser.cpp
 bool RequestParser::parseHeaders(const std::string& rawHeaders, Request& req)
 {
     std::istringstream stream(rawHeaders);
@@ -111,7 +122,8 @@ bool RequestParser::parseHeaders(const std::string& rawHeaders, Request& req)
     parseRequestLine(line, req);
 
     // Headers
-    while (std::getline(stream, line)) {
+    while (std::getline(stream, line))
+    {
         if (!line.empty() && line.back() == '\r')
             line.pop_back();
         if (line.empty())
@@ -135,24 +147,14 @@ static bool isChunkedEncoding(const std::string& transferEncoding)
     if (transferEncoding.empty())
         return false;
     
-    // Convert to lowercase for case-insensitive comparison
     std::string te = transferEncoding;
     for (size_t i = 0; i < te.size(); ++i)
         te[i] = std::tolower(te[i]);
-    
-    // Check if "chunked" appears anywhere in the header
-    // Handle cases like:
-    // - "chunked"
-    // - "gzip, chunked"
-    // - "chunked, gzip" (invalid per RFC, but be defensive)
-    // - "chunked;q=1.0"
     
     size_t pos = te.find("chunked");
     if (pos == std::string::npos)
         return false;
     
-    // Ensure it's a complete word, not part of another word
-    // Check character before
     if (pos > 0)
     {
         char before = te[pos - 1];
@@ -160,8 +162,7 @@ static bool isChunkedEncoding(const std::string& transferEncoding)
             return false;
     }
     
-    // Check character after
-    size_t endPos = pos + 7; // length of "chunked"
+    size_t endPos = pos + 7;
     if (endPos < te.size())
     {
         char after = te[endPos];
@@ -172,28 +173,17 @@ static bool isChunkedEncoding(const std::string& transferEncoding)
     return true;
 }
 
-// ============================================================================
-// ERSETZE in parseBody() die Zeile:
-// bool isChunked = req.headers.count("Transfer-Encoding") &&
-//                 req.headers["Transfer-Encoding"] == "chunked";
-// MIT:
-// ============================================================================
-bool RequestParser::parseBody(std::istringstream& stream, Request& req, 
-                              const LocationConfig& locationConfig, 
-                              const ServerConfig& serverConfig)
+bool RequestParser::parseBody(std::istringstream& stream, Request& req, const LocationConfig& locationConfig, const ServerConfig& serverConfig)
 {
     const size_t maxBody =
         (locationConfig.client_max_body_size > 0)
         ? locationConfig.client_max_body_size
         : serverConfig.client_max_body_size;
 
-    // READ BODY SIZE HEADERS
-    // FIXED: Properly check for chunked encoding (can be "gzip, chunked")
     if (req.headers.count("Transfer-Encoding"))
     {
         req.is_chunked = isChunkedEncoding(req.headers["Transfer-Encoding"]);
         
-        // RFC 2616: If Transfer-Encoding is present, Content-Length MUST be ignored
         if (req.is_chunked && req.headers.count("Content-Length"))
         {
             std::cerr << "[WARNING] Both Transfer-Encoding and Content-Length present. "
@@ -206,26 +196,32 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req,
         try
         {
             req.content_len = std::stoul(req.headers["Content-Length"]);
-            if (maxBody > 0 && req.content_len > maxBody) {
+            if (maxBody > 0 && req.content_len > maxBody)
+            {
                 req.error = 413;
                 return false;
             }
-        } catch (...) {
+        }
+        catch (...)
+        {
             req.content_len = 0;
         }
     }
 
-    // READ BODY (chunked or normal)
     if (req.is_chunked) {
         std::string err;
-        if (!decodeChunkedBody(stream, req.body, err, maxBody)) {
+        if (!decodeChunkedBody(stream, req.body, err, maxBody))
+        {
             std::cerr << "Chunked decode error: " << err << std::endl;
             req.body.clear();
             req.content_len = 0;
 
-            if (err.find("too large") != std::string::npos) {
+            if (err.find("too large") != std::string::npos)
+            {
                 req.error = 413;
-            } else {
+            }
+            else
+            {
                 req.error = 400;
             }
             return false;
@@ -266,7 +262,8 @@ bool RequestParser::parseBody(std::istringstream& stream, Request& req,
 static inline std::string trim(const std::string& s)
 {
     size_t a = s.find_first_not_of(" \t\r\n");
-    if (a == std::string::npos) return "";
+    if (a == std::string::npos)
+        return "";
     size_t b = s.find_last_not_of(" \t\r\n");
     return s.substr(a, b - a + 1);
 }
@@ -275,17 +272,19 @@ static std::map<std::string,std::string> parseCookieHeader(const std::string& he
 {
     std::map<std::string,std::string> out;
     size_t pos = 0;
-    while (pos < header.size()) {
-        // split by ';'
+    while (pos < header.size())
+    {
         size_t semi = header.find(';', pos);
         std::string pair = header.substr(pos, (semi==std::string::npos) ? std::string::npos : semi - pos);
         size_t eq = pair.find('=');
-        if (eq != std::string::npos) {
+        if (eq != std::string::npos)
+        {
             std::string k = trim(pair.substr(0, eq));
             std::string v = trim(pair.substr(eq + 1));
             out[k] = v;
         }
-        if (semi == std::string::npos) break;
+        if (semi == std::string::npos)
+            break;
         pos = semi + 1;
     }
     return out;

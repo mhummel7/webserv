@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/15 16:46:11 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/16 11:41:04 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -39,9 +39,10 @@ Response CGIHandler::execute(const Request& req)
     Response res;
     size_t timeout_ms = g_cfg.keepalive_timeout_ms;
 
+#ifdef DEBUG
     std::cout << "Executing CGI script: " << req.path 
               << " (timeout: " << timeout_ms << "ms)" << std::endl;
-
+#endif
     std::map<std::string, std::string> env = buildEnv(req, req.path);
     std::string output = runCGI(req.path, env, req.body, timeout_ms);
 
@@ -74,8 +75,8 @@ static std::string getInterpreter(const std::string& scriptPath)
 {
     if (scriptPath.find(".py") != std::string::npos)
         return "/usr/bin/python3";
-    if (scriptPath.find(".php") != std::string::npos)
-        return "/usr/bin/php-cgi";
+    if (scriptPath.find(".rb") != std::string::npos)
+        return "/usr/bin/ruby";
     return "";
 }
 
