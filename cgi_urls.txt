@@ -1,0 +1,16 @@
+# Einfache GET-Requests
+http://localhost:8080/cgi-bin/hello.py
+http://localhost:8080/cgi-bin/hello.py?test=123
+http://localhost:8080/cgi-bin/time.py
+http://localhost:8080/cgi-bin/time.cgi
+
+# POST-Requests mit Body (echo.cgi echo't den Body zurück)
+http://localhost:8080/cgi-bin/echo.cgi POST test=123&name=siege
+http://localhost:8080/cgi-bin/echo.cgi POST {"json":"data","user":"siege"}
+http://localhost:8080/cgi-bin/echo.cgi POST <./small_post_body.txt
+
+# Error-CGI (sollte 502 oder 500 geben – testet Fehlerbehandlung)
+http://localhost:8080/cgi-bin/error.cgi
+
+# Timeout-CGI (nur zum manuellen Testen – NICHT in siege mitlaufen lassen, da es hängt!)
+# http://localhost:8080/cgi-bin/loop.cgi
