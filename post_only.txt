@@ -1,3 +1,0 @@
-http://localhost:8080/cgi-bin/echo.cgi POST test=123&name=siege
-http://localhost:8080/cgi-bin/echo.cgi POST {"json":"data"}
-http://localhost:8080/cgi-bin/echo.cgi POST <./small_post_body.txt
