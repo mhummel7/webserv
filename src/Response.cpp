@@ -292,18 +292,15 @@ std::string ResponseHandler::getStatusMessage(int code)
 	}
 }
 
-std::string ResponseHandler::loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml, const LocationConfig& locationConfig)
+std::string ResponseHandler::loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml)
 {
     if (errorPath.empty())
         return fallbackHtml;
-    std::string errorBase = locationConfig.root;
-    std::string relPath = errorPath;
-    if (!relPath.empty() && relPath[0] == '/') relPath = relPath.substr(1);
-    std::string fullPath = errorBase + relPath;
-    if (fileExists(fullPath)) {
-        return readFile(fullPath);
+
+    if (fileExists(errorPath)) {
+        return readFile(errorPath);
     }
-    std::cerr << "Warning: Error page not found at " << fullPath << std::endl;
+    std::cerr << "Warning: Error page not found at " << errorPath << std::endl;
     return fallbackHtml;
 }
 
@@ -475,7 +472,7 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
         {
             errorPath = g_cfg.default_error_pages.at(403);
         }
-        res.body = loadErrorPage(errorPath, fallback, config);
+        res.body = loadErrorPage(errorPath, fallback);
         res.headers["Content-Type"] = "text/html";
         res.headers["Content-Length"] = std::to_string(res.body.size());
         return res;
@@ -526,7 +523,7 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
     }
 
     std::string fallback = "<h1>404 Not Found</h1>";
-    res.body = loadErrorPage(errorPath, fallback, config);
+    res.body = loadErrorPage(errorPath, fallback);
     res.headers["Content-Type"] = "text/html";
     res.headers["Content-Length"] = std::to_string(res.body.size());
     return res;
@@ -856,7 +853,7 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
     }
 
     std::string fallback = "<h1>" + std::to_string(req.error) + " " + res.reasonPhrase + "</h1>";
-    res.body = loadErrorPage(errorPath, fallback, locConfig);
+    res.body = loadErrorPage(errorPath, fallback);
 
     res.headers["Content-Type"] = "text/html";
     res.headers["Content-Length"] = std::to_string(res.body.size());
