@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 14:56:48 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/16 15:51:01 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -326,6 +326,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             c.tx = res.toString();
             fds[i].events &= ~POLLIN;
             fds[i].events |= POLLOUT;
+            std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
             return true;
         }
 
@@ -339,6 +340,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 c.tx = res.toString();
                 fds[i].events &= ~POLLIN;
                 fds[i].events |= POLLOUT;
+                std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
                 return true;
             }
         }
@@ -406,6 +408,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 fds[i].events |=  POLLOUT;
 
                 c.rx.clear();
+                std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
                 return true;
             }
         }
@@ -459,7 +462,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             fds[i].events |= POLLOUT;
 
             c.rx.clear();
-
+            std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
             return true;
         }
 
@@ -484,6 +487,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             c.tx         = res.toString();
             fds[i].events &= ~POLLIN;
             fds[i].events |=  POLLOUT;
+            std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
         }
         return true;
     }
