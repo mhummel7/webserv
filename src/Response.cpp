@@ -292,11 +292,11 @@ std::string ResponseHandler::getStatusMessage(int code)
 	}
 }
 
-std::string ResponseHandler::loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml) {
-    if (errorPath.empty()) {
+std::string ResponseHandler::loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml, const LocationConfig& locationConfig)
+{
+    if (errorPath.empty())
         return fallbackHtml;
-    }
-    std::string errorBase = "./root/";
+    std::string errorBase = locationConfig.root;
     std::string relPath = errorPath;
     if (!relPath.empty() && relPath[0] == '/') relPath = relPath.substr(1);
     std::string fullPath = errorBase + relPath;
@@ -352,8 +352,10 @@ static std::string sanitizeColor(const std::string& raw)
 // helper: return color cookie value
 static std::string cookieColor(const Request& req)
 {
-    if (req.cookies.count("color")) return req.cookies.at("color");
-    if (req.cookies.count("bg"))    return req.cookies.at("bg");
+    if (req.cookies.count("color"))
+        return req.cookies.at("color");
+    if (req.cookies.count("bg"))
+        return req.cookies.at("bg");
     return "";
 }
 
@@ -393,8 +395,7 @@ bool ResponseHandler::handleDirectoryRequest(const std::string& url, const std::
 }
 
 
-bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsPath,
-                            const LocationConfig& config, Response& res)
+bool ResponseHandler::handleFileOrCgi(const Request& req, const std::string& fsPath, const LocationConfig& config, Response& res)
 {
     if (!fileExists(fsPath))
         return false;
@@ -462,14 +463,19 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
         res.reasonPhrase = getStatusMessage(403);
         std::string fallback = "<h1>403 Forbidden</h1>";
         std::string errorPath;
-        if (config.error_pages.count(403)) {
+        if (config.error_pages.count(403))
+        {
             errorPath = config.error_pages.at(403);
-        } else if (serverConfig.error_pages.count(403)) {
+        }
+        else if (serverConfig.error_pages.count(403))
+        {
             errorPath = serverConfig.error_pages.at(403);
-        } else if (g_cfg.default_error_pages.count(403)) {
+        }
+        else if (g_cfg.default_error_pages.count(403))
+        {
             errorPath = g_cfg.default_error_pages.at(403);
         }
-        res.body = loadErrorPage(errorPath, fallback);
+        res.body = loadErrorPage(errorPath, fallback, config);
         res.headers["Content-Type"] = "text/html";
         res.headers["Content-Length"] = std::to_string(res.body.size());
         return res;
@@ -520,7 +526,7 @@ Response& ResponseHandler::methodGET(const Request& req, Response& res, const Lo
     }
 
     std::string fallback = "<h1>404 Not Found</h1>";
-    res.body = loadErrorPage(errorPath, fallback);
+    res.body = loadErrorPage(errorPath, fallback, config);
     res.headers["Content-Type"] = "text/html";
     res.headers["Content-Length"] = std::to_string(res.body.size());
     return res;
@@ -701,17 +707,16 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
     std::string filename = req.body;
 
     while (!filename.empty() && (filename.back() == '\r' || filename.back() == '\n' ||
-           filename.back() == ' ' || filename.back() == '\t')) {
+           filename.back() == ' ' || filename.back() == '\t'))
+           {
         filename.pop_back();
     }
     
     size_t start = 0;
-    while (start < filename.size() && (filename[start] == ' ' || filename[start] == '\t')) {
+    while (start < filename.size() && (filename[start] == ' ' || filename[start] == '\t'))
         ++start;
-    }
-    if (start > 0) {
+    if (start > 0)
         filename = filename.substr(start);
-    }
 
     filename = urlDecode(filename);
 
@@ -729,7 +734,6 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
         return res;
     }
     
-    // Additional security: check for NULL bytes (C-string truncation attack)
     if (filename.find('\0') != std::string::npos)
     {
         res = makeHtmlResponse(403, "<h1>403 Forbidden - Invalid filename</h1>");
@@ -755,7 +759,7 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
         return res;
     }
 
-    // 3. Dateipfad erstellen
+    // create path
     std::string baseDir;
     if (!config.data_dir.empty()) {
         baseDir = config.data_dir;
@@ -784,7 +788,7 @@ Response& ResponseHandler::methodDELETE(const Request& req, Response& res, const
         return res;
     }
     
-    // check if it exists first
+    // check if it exists
     if (!fileExists(filepath))
     {
         res.statusCode = 404;
@@ -837,7 +841,6 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
 {
    if (req.error != 0)
    {
-    // std::cout << "req.error nicht 0:" << req.error << std::endl;
     Response res;
     res.statusCode = req.error;
     res.reasonPhrase = getStatusMessage(req.error);
@@ -853,12 +856,11 @@ Response ResponseHandler::handleRequest(const Request& req, const LocationConfig
     }
 
     std::string fallback = "<h1>" + std::to_string(req.error) + " " + res.reasonPhrase + "</h1>";
-    res.body = loadErrorPage(errorPath, fallback);
+    res.body = loadErrorPage(errorPath, fallback, locConfig);
 
     res.headers["Content-Type"] = "text/html";
     res.headers["Content-Length"] = std::to_string(res.body.size());
     res.keep_alive = false;
-    // std::cout << "ende von decode error res.status:" << res.statusCode << std::endl;
     return res;
     }
 

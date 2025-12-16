@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Response.hpp                                       :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:34 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/08 10:25:51 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/16 11:59:01 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -43,7 +43,7 @@ class ResponseHandler
 	private:
 		std::string getStatusMessage(int code);
 		// Unter public: oder private: in class ResponseHandler
-		std::string loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml);
+		std::string loadErrorPage(const std::string& errorPath, const std::string& fallbackHtml, const LocationConfig& locationConfig);
 		std::string readFile(const std::string& path);
 		bool fileExists(const std::string& path);
 		Response& methodGET(const Request& req, Response& res, const LocationConfig& config, const ServerConfig& serverConfig);
