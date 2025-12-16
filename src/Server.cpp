@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 08:57:15 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/16 14:51:52 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -62,8 +62,9 @@ static int add_listener(uint16_t port)
 
     if (::bind(s, (sockaddr*)&a, sizeof(a)) < 0)
     {
+		perror("bind");
         ::close(s);
-        return -1;
+        exit(1);
     }
 
     if (::listen(s, 128) < 0)
@@ -333,7 +334,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             if (req.headers.find("Host") == req.headers.end() || req.headers["Host"].empty())
             {
                 ResponseHandler handler;
-                Response res = handler.makeHtmlResponse(400, 
+                Response res = handler.makeHtmlResponse(400,
                     "<h1>400 Bad Request</h1><p>HTTP/1.1 requests must include a Host header</p>");
                 c.tx = res.toString();
                 fds[i].events &= ~POLLIN;
@@ -384,7 +385,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             try
             {
                 contentLength = std::stoul(req.headers["Content-Length"]);
-            } 
+            }
             catch (...) {}
 
             // Größenprüfung mit Location/Server-Konfiguration
@@ -416,7 +417,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         {
             size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
             if (endMarker == std::string::npos)
-                return true; 
+                return true;
             totalNeeded = endMarker + 5;
         }
         else
