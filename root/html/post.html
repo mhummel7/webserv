@@ -248,8 +248,8 @@
 
             const links = temp.querySelectorAll("a");
             const files = [...links]
-                .map(a => a.textContent.trim())
-                .filter(name => name !== "posts");
+                .map(a => a.textContent.trim().replace(/\/$/, "")) // optional: trailing "/" entfernen
+                .filter(name => name && name !== "posts" && name !== "." && name !== "..");
 
             if (!files.length) {
                 div.innerHTML = "<div class='empty-state'>No files yet.</div>";

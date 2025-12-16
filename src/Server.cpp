@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/15 16:43:53 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/16 08:57:15 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -21,6 +21,7 @@ static std::vector<Client>     clients;
 static std::unordered_map<int /*port*/, std::vector<size_t> /*server indices*/> servers_by_port;
 static std::unordered_map<int /*lfd*/,  int /*port*/>      port_by_listener_fd;
 
+// sets NONBLOCKING Flag -> systemcalls dont block on fd -> insta retrun
 int make_nonblocking(int fd)
 {
     int flags = fcntl(fd, F_GETFL, 0);
@@ -40,6 +41,7 @@ static void reset_for_next_request(Client& c)
     c.ch_need  = 0;
 }
 
+// opens non-blocking Socket
 static int add_listener(uint16_t port)
 {
     int s = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -90,7 +92,6 @@ static int add_listener(uint16_t port)
 }
 
 
-
 int webserv(int argc, char* argv[])
 {
     Server server;
@@ -104,13 +105,12 @@ static void setupBuiltinDefaultConfig()
 	srv.listen_host = "127.0.0.1";
 	srv.listen_port = 8080;
 	srv.server_name = "localhost";
-	srv.client_max_body_size = 10 * 1024 * 1024;  // 10M – wie in conf
+	srv.client_max_body_size = 10 * 1024 * 1024;
 
-	// Globale Direktive
 	g_cfg.default_error_pages[404] = "/errors/404.html";
 	g_cfg.default_client_max_body_size = srv.client_max_body_size;
 
-	// === location / ===
+	// location /
 	{
 		LocationConfig loc;
 		loc.path = "/";
@@ -121,7 +121,7 @@ static void setupBuiltinDefaultConfig()
 		srv.locations.push_back(loc);
 	}
 
-	// === location /data ===
+	// location /data
 	{
 		LocationConfig loc;
 		loc.path = "/root/data";
@@ -131,7 +131,7 @@ static void setupBuiltinDefaultConfig()
 		srv.locations.push_back(loc);
 	}
 
-	// === location /root/cgi-bin ===
+	// location /root/cgi-bin
 	{
 		LocationConfig loc;
 		loc.path = "/root/cgi-bin";
@@ -142,52 +142,58 @@ static void setupBuiltinDefaultConfig()
 		srv.locations.push_back(loc);
 	}
 
-	// Alles übernehmen
 	g_cfg.servers.clear();
 	g_cfg.servers.push_back(srv);
 }
 
 void Server::loadConfig(int argc, char* argv[])
 {
-	if (argc > 2) {
+	if (argc > 2)
+    {
 		std::cerr << "Usage: " << argv[0] << " [config_file.conf]\n";
 		exit(1);
 	}
 
 	std::string configPath;
 
-	if (argc == 2) {
+	if (argc == 2)
+    {
 		configPath = argv[1];
 
 		// Nur .conf erlauben
-		if (configPath.size() < 5 || configPath.substr(configPath.size() - 5) != ".conf") {
+		if (configPath.size() < 5 || configPath.substr(configPath.size() - 5) != ".conf")
+        {
 			std::cerr << "Error: Config file must have .conf extension!\n";
 			exit(1);
 		}
-	} else {
+	}
+    else
+    {
 		configPath = "./config/webserv.conf";
 		std::cout << "No config file specified → trying default: " << configPath << "\n";
 	}
 
 	// Versuch, die Config zu laden
-	try {
+	try
+    {
 		g_cfg.parse_c(configPath);
 		std::cout << "Config successfully loaded: " << configPath << "\n";
 		return;
 	}
-	catch (const std::exception& e) {
+	catch (const std::exception& e)
+    {
 		std::cerr << "Failed to load config '" << configPath << "': " << e.what() << "\n";
 		std::cerr << "→ Starting with built-in default configuration\n";
 	}
 
-	// Fallback: manueller, 100 % aktueller Default-Server
+	// Fallback
 	setupBuiltinDefaultConfig();
 	std::cout << "Built-in default server activated on 127.0.0.1:8080\n";
 }
 
+//creates one listener per port
 void Server::setupListeners()
 {
-    // === 4. LISTENER AUS CONFIG STARTEN ===
     std::unordered_map<int, int> lfd_by_port;
 
     for (size_t s = 0; s < g_cfg.servers.size(); ++s)
@@ -218,7 +224,7 @@ void Server::closeClient(size_t &i)
 
 void Server::handleTimeouts(long now_ms, long IDLE_MS)
 {
-    for (size_t i = 1; i < fds.size(); ++i)
+    for (size_t i = 0; i < fds.size(); ++i)
     {
             if (listener_fds.count(fds[i].fd)) continue;
             if (now_ms - clients[i].last_active_ms > IDLE_MS)
@@ -230,6 +236,7 @@ void Server::handleTimeouts(long now_ms, long IDLE_MS)
         }
 }
 
+// accepts new TCP-connections and makes them non blocking
 void Server::handleListenerEvent(size_t index, long now_ms)
 {
     int fd = fds[index].fd;
@@ -252,10 +259,10 @@ void Server::handleListenerEvent(size_t index, long now_ms)
         int port = port_by_listener_fd[fd];
         c.listen_port = port;
 
-        // Default-Server (falls mehrere vHosts auf gleichem Port – später durch Host-Header präzisieren)
+        // Default-Server
         c.server_idx = servers_by_port[port].front();
 
-        // Body-Limit erstmal mit Server-Default belegen (wird nach Host-Match evtl. noch aktualisiert)
+        // Body-Limit erstmal mit Server-Default belegen
         const ServerConfig& sc0 = g_cfg.servers[c.server_idx];
         c.max_body_bytes = sc0.client_max_body_size;
         clients.push_back(c);
@@ -285,8 +292,16 @@ static const LocationConfig& resolve_location(const ServerConfig& sc, const std:
     return sc.locations[best];
 };
 
+// read -> req header + body -> response
 bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
 {
+    short re = fds[i].revents;
+    if (re & (POLLHUP | POLLERR | POLLNVAL))
+    {
+        closeClient(i);
+        return false;
+    }
+
     ssize_t n = ::read(fds[i].fd, buf, buf_size);
 
     if (n > 0)
@@ -335,7 +350,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             req.keep_alive = (req.headers.count("Connection") &&
                              req.headers["Connection"] == "keep-alive");
 
-        // 3) vHost bestimmen
+        // vHost bestimmen
         int port = c.listen_port;
         size_t server_idx = servers_by_port[port].front();
         std::string host = req.headers["Host"];
@@ -345,8 +360,10 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             size_t colon = host.find(':');
             if (colon != std::string::npos) host = host.substr(0, colon);
 
-            for (size_t idx : servers_by_port[port]) {
-                if (g_cfg.servers[idx].server_name == host) {
+            for (size_t idx : servers_by_port[port])
+            {
+                if (g_cfg.servers[idx].server_name == host)
+                {
                     server_idx = idx;
                     break;
                 }
@@ -362,30 +379,48 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                         req.headers["Transfer-Encoding"] == "chunked";
 
         size_t contentLength = 0;
-        if (!isChunked && req.headers.count("Content-Length")) {
-            try {
+        if (!isChunked && req.headers.count("Content-Length"))
+        {
+            try
+            {
                 contentLength = std::stoul(req.headers["Content-Length"]);
-            } catch (...) {}
+            } 
+            catch (...) {}
 
             // Größenprüfung mit Location/Server-Konfiguration
             size_t maxBody = (lc.client_max_body_size > 0)
                             ? lc.client_max_body_size
                             : sc.client_max_body_size;
 
-            if (maxBody > 0 && contentLength > maxBody) {
-                req.error = 413;
+            if (maxBody > 0 && contentLength > maxBody)
+            {
+                ResponseHandler handler;
+                Response res = handler.makeHtmlResponse(413, "<h1>413 Payload Too Large</h1>");
+
+                res.keep_alive = false;
+                c.keep_alive   = false;
+
+                c.tx = res.toString();
+                fds[i].events &= ~POLLIN;
+                fds[i].events |=  POLLOUT;
+
+                c.rx.clear();
+                return true;
             }
         }
 
         size_t totalNeeded = headerEnd + 4;
         size_t bodyStart = headerEnd + 4;
 
-        if (isChunked) {
+        if (isChunked)
+        {
             size_t endMarker = c.rx.find("0\r\n\r\n", bodyStart);
             if (endMarker == std::string::npos)
                 return true; 
             totalNeeded = endMarker + 5;
-        } else {
+        }
+        else
+        {
             totalNeeded += contentLength;
             if (c.rx.size() < totalNeeded)
                 return true;
@@ -396,7 +431,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 
         // Skip Headers
         std::string line;
-        while (std::getline(stream, line)) {
+        while (std::getline(stream, line))
+        {
             if (!line.empty() && line.back() == '\r')
                 line.pop_back();
             if (line.empty())
@@ -404,9 +440,26 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         }
 
 
-        if (!parser.parseBody(stream, req, lc, sc)) {
-            // Fehler beim Body-Parsing (413 oder 400)
-            // req.error ist bereits gesetzt
+        if (!parser.parseBody(stream, req, lc, sc))
+        {
+            int code = (req.error != 0) ? req.error : 400;
+
+            ResponseHandler handler;
+            Response res = handler.makeHtmlResponse(code,
+                (code == 413)
+                    ? "<h1>413 Payload Too Large</h1>"
+                    : "<h1>400 Bad Request</h1>");
+
+            res.keep_alive = false;
+            c.keep_alive = false;
+
+            c.tx = res.toString();
+            fds[i].events &= ~POLLIN;
+            fds[i].events |= POLLOUT;
+
+            c.rx.clear();
+
+            return true;
         }
 
         #ifdef DEBUG
@@ -428,7 +481,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
-            fds[i].events |= POLLOUT;
+            fds[i].events &= ~POLLIN;
+            fds[i].events |=  POLLOUT;
         }
         return true;
     }
@@ -443,6 +497,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
     }
 }
 
+// send resposnse -> keep alive or close
 bool Server::handleClientWrite(size_t &i, long now_ms)
 {
     Client &c = clients[i];
@@ -456,13 +511,15 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
     {
         c.tx.erase(0, static_cast<size_t>(m));
         c.last_active_ms = now_ms;
-        return true;
     }
-    if (m == 0)
+    else if (m == 0)
     {
-        // praktisch: connection kaputt / closed -> schließen
         closeClient(i);
         return false;
+    }
+    else
+    {
+        return true;
     }
 
     if (c.tx.empty())
@@ -470,7 +527,8 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
         if (c.keep_alive)
         {
             reset_for_next_request(c);
-            fds[i].events &= ~POLLOUT;  // nur noch lesen
+            fds[i].events &= ~POLLOUT;  // nicht mehr schreiben
+            fds[i].events |=  POLLIN;  // wieder lesen
             return true;
         }
         else
@@ -483,30 +541,27 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
     return true;
 }
 
-
+// poll opens multiple sockets (warteliste)
 int Server::run(int argc, char* argv[])
 {
     loadConfig(argc, argv);
 
-    // === 3. DEFAULTS FÜR ALLE SERVER/LOCATIONS SETZEN ===
+    // set defaults
     for (auto& server : g_cfg.servers)
     {
         if (server.listen_port == 0)
             server.listen_port = 80;
-        // if (server.client_max_body_size == 0)
-        //     server.client_max_body_size = g_cfg.default_client_max_body_size;
         if (server.error_pages.empty())
             server.error_pages = g_cfg.default_error_pages;
 
-        for (auto& loc : server.locations) {
+        for (auto& loc : server.locations)
+        {
             if (loc.index.empty())
                 loc.index = "index.html";
             if (loc.methods.empty())
                 loc.methods = {"GET", "POST", "DELETE"};
             if (loc.error_pages.empty())
                 loc.error_pages = server.error_pages;
-            if (!loc.autoindex)
-                loc.autoindex = false;
         }
     }
 
