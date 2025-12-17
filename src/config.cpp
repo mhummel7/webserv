@@ -6,7 +6,7 @@
 /*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/20 12:53:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 14:53:24 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/17 10:52:54 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -243,15 +243,11 @@ void Config::parse_c(const std::string& filename) {
 			}
 			else if (key == "server_name" && !params.empty())
 				currentServer->server_name = params[0];
-			// ADD THIS: Server-level client_max_body_size override
 			else if (key == "client_max_body_size" && !params.empty()) {
 				currentServer->client_max_body_size = parseSize(params[0]);
 			}
-			// TODO: Add more server directives here (e.g., error_page per server)
 		}
 	}
-		// No else here—unknown directives in SERVER/LOCATION are handled elsewhere or ignored
-		// (but add a warning? e.g., std::cerr << "Warning: Unknown directive '" << key << "' in " << context << std::endl;)
 
 	resolveVariables();
 	// ────────────────────── VALIDIERUNG AM ENDE ──────────────────────
