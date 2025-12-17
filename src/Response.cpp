@@ -690,6 +690,7 @@ Response& ResponseHandler::methodPOST(const Request& req, Response& res, const L
 			res.body = "<h1>POST stored successfully!</h1><p>Saved as " + filename + "</p>";
 		}
 	}
+    res.headers["Content-Length"] = std::to_string(res.body.size());
 	return res;
 }
 

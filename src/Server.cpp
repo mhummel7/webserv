@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 14:56:48 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/17 09:23:11 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -296,13 +296,6 @@ static const LocationConfig& resolve_location(const ServerConfig& sc, const std:
 // read -> req header + body -> response
 bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size)
 {
-    short re = fds[i].revents;
-    if (re & (POLLHUP | POLLERR | POLLNVAL))
-    {
-        closeClient(i);
-        return false;
-    }
-
     ssize_t n = ::read(fds[i].fd, buf, buf_size);
 
     if (n > 0)
@@ -324,8 +317,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             ResponseHandler handler;
             Response res = handler.makeHtmlResponse(400, "<h1>400 Bad Request</h1>");
             c.tx = res.toString();
-            fds[i].events &= ~POLLIN;
             fds[i].events |= POLLOUT;
+            std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
             return true;
         }
 
@@ -337,8 +330,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 Response res = handler.makeHtmlResponse(400,
                     "<h1>400 Bad Request</h1><p>HTTP/1.1 requests must include a Host header</p>");
                 c.tx = res.toString();
-                fds[i].events &= ~POLLIN;
                 fds[i].events |= POLLOUT;
+                std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
                 return true;
             }
         }
@@ -402,10 +395,10 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 c.keep_alive   = false;
 
                 c.tx = res.toString();
-                fds[i].events &= ~POLLIN;
                 fds[i].events |=  POLLOUT;
 
                 c.rx.clear();
+                std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
                 return true;
             }
         }
@@ -455,11 +448,10 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             c.keep_alive = false;
 
             c.tx = res.toString();
-            fds[i].events &= ~POLLIN;
             fds[i].events |= POLLOUT;
 
             c.rx.clear();
-
+            std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
             return true;
         }
 
@@ -482,23 +474,22 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
-            fds[i].events &= ~POLLIN;
             fds[i].events |=  POLLOUT;
+            std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
         }
         return true;
     }
-    else if (n == 0)
+    if (n == 0)
     {
         closeClient(i);
         return false;
     }
-    else if (n < 0)
+    if (n < 0)
     {
         closeClient(i);
         return false;
     }
-    else
-        return true;
+    return true;
 }
 
 // send resposnse -> keep alive or close
@@ -507,7 +498,10 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
     Client &c = clients[i];
 
     if (c.tx.empty())
+    {
+        fds[i].events &= ~POLLOUT;  // nicht mehr schreiben
         return true;
+    }
 
     ssize_t m = write(fds[i].fd, c.tx.data(), c.tx.size());
 
@@ -516,18 +510,16 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
         c.tx.erase(0, static_cast<size_t>(m));
         c.last_active_ms = now_ms;
     }
-    else if (m == 0)
+    if (m == 0)
     {
         closeClient(i);
         return false;
     }
-    else if (m < 0)
+    if (m < 0)
     {
         closeClient(i);
         return false;
     }
-    else
-        return true;
 
     if (c.tx.empty())
     {
@@ -535,7 +527,6 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
         {
             reset_for_next_request(c);
             fds[i].events &= ~POLLOUT;  // nicht mehr schreiben
-            fds[i].events |=  POLLIN;  // wieder lesen
             return true;
         }
         else
@@ -576,58 +567,62 @@ int Server::run(int argc, char* argv[])
 
     const long IDLE_MS = g_cfg.keepalive_timeout_ms;
     char buf[4096];
-    #ifdef DEBUG
-    std::cout << "Echo server with write-buffer on port 8080...\n";
-    #endif
 
     while (1)
-	{
-        // zeit setup
+    {
+        // time
         using clock_t = std::chrono::steady_clock;
         using ms      = std::chrono::milliseconds;
 
         long now_ms = std::chrono::duration_cast<ms>(clock_t::now().time_since_epoch()).count();
         handleTimeouts(now_ms, IDLE_MS);
 
-        //poll
+        // poll
         static int poll_fail = 0;
         int ready = poll(&fds[0], fds.size(), 1000);
-        if (ready < 0) {
-            if (++poll_fail > 1000) break;
+        if (ready < 0)
+        {
+            if (++poll_fail > 1000)
+                break;
             continue;
         }
         poll_fail = 0;
 
-        //Events abarbeiten
+        // handle events
         for (size_t i = 0; i < fds.size(); ++i)
-		{
-            if (fds[i].revents == 0)
+        {
+            short re = fds[i].revents;
+            if (re == 0)
                 continue;
+            fds[i].revents = 0;
 
             int fd = fds[i].fd;
             bool is_listener = (listener_fds.find(fd) != listener_fds.end());
 
+            // listener: accept new clients
             if (is_listener)
-			{
+            {
                 handleListenerEvent(i, now_ms);
                 continue;
             }
 
-            if (fds[i].revents & (POLLHUP | POLLERR | POLLNVAL))
-			{
+            // error/hangup on client fd
+            if (re & (POLLHUP | POLLERR | POLLNVAL))
+            {
                 closeClient(i);
                 continue;
             }
-            // Lesen
-            if (fds[i].revents & POLLIN)
-            {
 
+            // read
+            if (re & POLLIN)
+            {
                 if (!handleClientRead(i, now_ms, buf, sizeof(buf)))
                     continue;
             }
-            // Schreiben
-            if (fds[i].revents & POLLOUT)
-			{
+
+            // write
+            if (re & POLLOUT)
+            {
                 if (!handleClientWrite(i, now_ms))
                     continue;
             }
@@ -638,3 +633,4 @@ int Server::run(int argc, char* argv[])
         ::close(p.fd);
     return 0;
 }
+

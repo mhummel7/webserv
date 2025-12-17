@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 10:33:12 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/17 10:33:50 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -312,6 +312,7 @@ std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std
         {
             kill(pid, SIGKILL);
             waitpid(pid, NULL, 0);
+            
             std::cerr << "CGI script timed out after " << timeout_ms << "ms" << std::endl;
             return "<h1>CGI Timeout</h1><p>Script exceeded maximum execution time of " 
                    + std::to_string(timeout_ms / 1000) + " seconds</p>";
