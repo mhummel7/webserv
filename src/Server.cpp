@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 11:32:09 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/17 11:36:25 by mhummel          ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -101,50 +101,52 @@ int webserv(int argc, char* argv[])
 
 static void setupBuiltinDefaultConfig()
 {
-	ServerConfig srv;
+    g_cfg.keepalive_timeout_ms = 10000; // 10s
 
-	srv.listen_host = "127.0.0.1";
-	srv.listen_port = 8080;
-	srv.server_name = "localhost";
-	srv.client_max_body_size = 10 * 1024 * 1024;
+    g_cfg.default_error_pages[404] = "./root/errors/404.html";
+    g_cfg.default_client_max_body_size = 10 * 1024 * 1024; // 10M
 
-	g_cfg.default_error_pages[404] = "/errors/404.html";
-	g_cfg.default_client_max_body_size = srv.client_max_body_size;
+    ServerConfig srv;
+    srv.listen_host = "127.0.0.1";
+    srv.listen_port = 8080;
+    srv.server_name = "localhost";
+    srv.client_max_body_size = 0; // Inherit from global
 
-	// location /
-	{
-		LocationConfig loc;
-		loc.path = "/";
-		loc.root = "./root/html";
-		loc.index = "index.html";
-		loc.autoindex = true;
-		loc.methods = {"GET", "POST"};
-		srv.locations.push_back(loc);
-	}
+    // location /
+    {
+        LocationConfig loc;
+        loc.path = "/";
+        loc.root = "./root/html";
+        loc.index = "index.html";
+        loc.autoindex = true;
+        loc.methods = {"GET", "POST"};
+        srv.locations.push_back(loc);
+    }
 
-	// location /data
-	{
-		LocationConfig loc;
-		loc.path = "/root/data";
-		loc.root = "./root/data";
-		loc.autoindex = true;
-		loc.methods = {"GET", "POST"};
-		srv.locations.push_back(loc);
-	}
+    // location /data
+    {
+        LocationConfig loc;
+        loc.path = "/data";
+        loc.root = "./root/data";
+        loc.autoindex = true;
+        loc.methods = {"GET", "POST", "DELETE"};
+        loc.client_max_body_size = 400;
+        srv.locations.push_back(loc);
+    }
 
-	// location /root/cgi-bin
-	{
-		LocationConfig loc;
-		loc.path = "/root/cgi-bin";
-		loc.root = "./root/cgi-bin";
-		loc.cgi[".py"]  = "/usr/bin/python3";
-		loc.cgi[".php"] = "/usr/bin/php-cgi";
-		loc.methods = {"GET", "POST"};
-		srv.locations.push_back(loc);
-	}
+    // location /root/cgi-bin
+    {
+        LocationConfig loc;
+        loc.path = "/root/cgi-bin";
+        loc.root = "./root/cgi-bin";
+        loc.cgi[".py"]  = "/usr/bin/python3";
+        loc.cgi[".php"] = "/usr/bin/php-cgi";
+        loc.methods = {"GET", "POST"};
+        srv.locations.push_back(loc);
+    }
 
-	g_cfg.servers.clear();
-	g_cfg.servers.push_back(srv);
+    g_cfg.servers.clear();
+    g_cfg.servers.push_back(srv);
 }
 
 void Server::loadConfig(int argc, char* argv[])
@@ -230,7 +232,7 @@ void Server::handleTimeouts(long now_ms, long IDLE_MS)
             if (listener_fds.count(fds[i].fd)) continue;
 
             if (!clients[i].tx.empty()) continue;
-                    
+
             if (now_ms - clients[i].last_active_ms > IDLE_MS)
             {
                 std::cerr << "[TIMEOUT] fd=" << fds[i].fd
