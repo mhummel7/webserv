@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 10:33:50 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/17 11:12:05 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -43,15 +43,77 @@ Response CGIHandler::execute(const Request& req)
     std::cout << "Executing CGI script: " << req.path 
               << " (timeout: " << timeout_ms << "ms)" << std::endl;
 #endif
+    
     std::map<std::string, std::string> env = buildEnv(req, req.path);
-    std::string output = runCGI(req.path, env, req.body, timeout_ms);
+    CGIResult result = runCGI(req.path, env, req.body, timeout_ms);
+    
+    if (result.error == CGI_SUCCESS)
+    {
+        res.statusCode = 200;
+        res.reasonPhrase = "OK";
+        res.body = result.output;
+        res.headers["Content-Type"] = "text/html";
+        res.headers["Content-Length"] = std::to_string(res.body.size());
+        
+        if (result.exit_status != 0)
+        {
+            res.statusCode = 500;
+            res.reasonPhrase = "Internal Server Error";
+        }
+    }
+    else
+    {
+        res = createErrorResponse(result.error, result.exit_status);
+    }
+    
+    return res;
+}
 
-    res.statusCode = 200;
-    res.reasonPhrase = "OK";
+Response CGIHandler::createErrorResponse(CGI_Error error, int script_exit_status)
+{
+    Response res;
+    
+    switch (error)
+    {
+        case CGI_TIMEOUT:
+            res.statusCode = 504;
+            res.reasonPhrase = "Gateway Timeout";
+            res.body = "<h1>504 Gateway Timeout</h1><p>CGI script exceeded maximum execution time</p>";
+            break;
+            
+        case CGI_SCRIPT_ERROR:
+            res.statusCode = 500;
+            res.reasonPhrase = "Internal Server Error";
+            res.body = "<h1>500 Internal Server Error</h1><p>CGI script failed with exit code " + 
+                      std::to_string(script_exit_status) + "</p>";
+            break;
+            
+        case CGI_EXEC_ERROR:
+            res.statusCode = 502;
+            res.reasonPhrase = "Bad Gateway";
+            res.body = "<h1>502 Bad Gateway</h1><p>Failed to execute CGI script</p>";
+            break;
+            
+        case CGI_FORK_ERROR:
+        case CGI_PIPE_ERROR:
+            res.statusCode = 500;
+            res.reasonPhrase = "Internal Server Error";
+            res.body = "<h1>500 Internal Server Error</h1><p>CGI process creation failed</p>";
+            break;
+            
+        case CGI_INTERNAL_ERROR:
+        default:
+            res.statusCode = 500;
+            res.reasonPhrase = "Internal Server Error";
+            res.body = "<h1>500 Internal Server Error</h1><p>CGI execution failed</p>";
+            break;
+    }
+    
     res.headers["Content-Type"] = "text/html";
-    res.body = output;
     res.headers["Content-Length"] = std::to_string(res.body.size());
-
+    res.headers["Connection"] = "close";
+    res.keep_alive = false;
+    
     return res;
 }
 
@@ -150,20 +212,23 @@ static bool write_with_timeout(int fd, const std::string& data, size_t timeout_m
     return true;
 }
 
-static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_t timeout_ms)
+static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_t timeout_ms, int& exit_status, CGI_Error& cgi_error)
 {
     long long read_start = get_time_ms();
     bool process_done = false;
     char buffer[4096];
+    exit_status = 0;
+    cgi_error = CGI_SUCCESS;
 
     while (!process_done)
     {
-        // Timeout check
         long long elapsed = get_time_ms() - read_start;
         if (elapsed > static_cast<long long>(timeout_ms))
+        {
+            cgi_error = CGI_TIMEOUT;
             return false;
+        }
 
-        // Check if process exited
         int status;
         pid_t ret = waitpid(pid, &status, WNOHANG);
         
@@ -171,30 +236,32 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
         {
             process_done = true;
             
-            // Read any remaining data
             ssize_t bytes;
             while ((bytes = read(fd, buffer, sizeof(buffer))) > 0)
             {
                 output.append(buffer, static_cast<size_t>(bytes));
             }
             
-            // Check exit status
-            if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
+            if (WIFEXITED(status))
             {
-                status = CGI_Error::INTERNAL_ERROR;
-                std::cerr << "CGI exited with code " << WEXITSTATUS(status) << std::endl;
-                return false;
+                exit_status = WEXITSTATUS(status);
+                if (exit_status != 0)
+                {
+                    cgi_error = CGI_SCRIPT_ERROR;
+                    std::cerr << "CGI exited with code " << exit_status << std::endl;
+                }
             }
-            if (WIFSIGNALED(status))
+            else if (WIFSIGNALED(status))
             {
-                status = CGI_Error::TIMEOUT;
+                cgi_error = CGI_SCRIPT_ERROR;
+                exit_status = 128 + WTERMSIG(status);
                 std::cerr << "CGI killed by signal " << WTERMSIG(status) << std::endl;
-                return false;
             }
             break;
         }
         else if (ret < 0)
         {
+            cgi_error = CGI_INTERNAL_ERROR;
             perror("waitpid");
             return false;
         }
@@ -215,15 +282,22 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
             if (bytes > 0)
             {
                 output.append(buffer, static_cast<size_t>(bytes));
-                read_start = get_time_ms(); 
+                read_start = get_time_ms();
             }
             else if (bytes == 0)
             {
                 continue;
             }
+            else if (bytes < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+            {
+                cgi_error = CGI_INTERNAL_ERROR;
+                perror("read from CGI");
+                return false;
+            }
         }
         else if (poll_ret < 0)
         {
+            cgi_error = CGI_INTERNAL_ERROR;
             perror("poll");
             return false;
         }
@@ -232,15 +306,19 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
     return true;
 }
 
-std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, const std::string& body, size_t timeout_ms)
+CGIResult CGIHandler::runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, 
+                             const std::string& body, size_t timeout_ms)
 {
+    CGIResult result;
+    
     int pipeIn[2];
     int pipeOut[2];
 
     if (pipe(pipeIn) < 0 || pipe(pipeOut) < 0)
     {
         perror("pipe");
-        return "<h1>CGI pipe error</h1>";
+        result.error = CGI_PIPE_ERROR;
+        return result;
     }
 
     fcntl(pipeOut[0], F_SETFL, O_NONBLOCK);
@@ -300,30 +378,34 @@ std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std
             kill(pid, SIGKILL);
             close(pipeOut[0]);
             waitpid(pid, NULL, 0);
-            return "<h1>CGI Timeout Error</h1><p>Timeout while writing to script</p>";
+            result.error = CGI_TIMEOUT;
+            return result;
         }
 
-        std::string output;
-        bool read_ok = read_with_poll_timeout(pipeOut[0], output, pid, timeout_ms);
+        bool read_ok = read_with_poll_timeout(pipeOut[0], result.output, pid, timeout_ms, 
+                                              result.exit_status, result.error);
         
         close(pipeOut[0]);
 
-        if (!read_ok)
+        if (!read_ok && result.error == CGI_TIMEOUT)
         {
             kill(pid, SIGKILL);
             waitpid(pid, NULL, 0);
-            
             std::cerr << "CGI script timed out after " << timeout_ms << "ms" << std::endl;
-            return "<h1>CGI Timeout</h1><p>Script exceeded maximum execution time of " 
-                   + std::to_string(timeout_ms / 1000) + " seconds</p>";
+        }
+        else if (!read_ok)
+        {
+            kill(pid, SIGKILL);
+            waitpid(pid, NULL, 0);
         }
 
-        return output;
+        return result;
     }
     else
     {
         perror("fork");
-        return "<h1>CGI fork error</h1>";
+        result.error = CGI_FORK_ERROR;
+        return result;
     }
 }
 
@@ -344,12 +426,7 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
     if (pipe(pipeIn) < 0 || pipe(pipeOut) < 0)
     {
         perror("pipe");
-        res.statusCode = 500;
-        res.reasonPhrase = "Internal Server Error";
-        res.body = "<h1>CGI pipe error</h1>";
-        res.headers["Content-Length"] = std::to_string(res.body.size());
-        res.headers["Content-Type"] = "text/html";
-        return res;
+        return createErrorResponse(CGI_PIPE_ERROR);
     }
 
     fcntl(pipeOut[0], F_SETFL, O_NONBLOCK);
@@ -400,17 +477,12 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
             kill(pid, SIGKILL);
             close(pipeOut[0]);
             waitpid(pid, NULL, 0);
-            
-            res.statusCode = 504;
-            res.reasonPhrase = "Gateway Timeout";
-            res.body = "<h1>504 Gateway Timeout</h1><p>Timeout while writing to CGI script</p>";
-            res.headers["Content-Length"] = std::to_string(res.body.size());
-            res.headers["Content-Type"] = "text/html";
-            return res;
+            return createErrorResponse(CGI_TIMEOUT);
         }
 
-        std::string output;
-        bool read_ok = read_with_poll_timeout(pipeOut[0], output, pid, timeout_ms);
+        CGIResult result;
+        bool read_ok = read_with_poll_timeout(pipeOut[0], result.output, pid, timeout_ms, 
+                                              result.exit_status, result.error);
         
         close(pipeOut[0]);
         
@@ -418,32 +490,39 @@ Response CGIHandler::executeWith(const Request& req, const std::string& execPath
         {
             kill(pid, SIGKILL);
             waitpid(pid, NULL, 0);
-            std::cerr << "CGI script timed out after " << timeout_ms << "ms" << std::endl;
             
-            res.statusCode = 504;
-            res.reasonPhrase = "Gateway Timeout";
-            res.body = "<h1>504 Gateway Timeout</h1><p>CGI script exceeded maximum execution time of " 
-                       + std::to_string(timeout_ms / 1000) + " seconds</p>";
-            res.headers["Content-Length"] = std::to_string(res.body.size());
-            res.headers["Content-Type"] = "text/html";
-            return res;
+            if (result.error == CGI_TIMEOUT)
+            {
+                std::cerr << "CGI script timed out after " << timeout_ms << "ms" << std::endl;
+            }
+            
+            return createErrorResponse(result.error, result.exit_status);
         }
 
-        res.statusCode = 200;
-        res.reasonPhrase = "OK";
-        res.headers["Content-Type"] = "text/html";
-        res.body = output;
-        res.headers["Content-Length"] = std::to_string(res.body.size());
+        if (result.error == CGI_SUCCESS)
+        {
+            res.statusCode = 200;
+            res.reasonPhrase = "OK";
+            res.headers["Content-Type"] = "text/html";
+            res.body = result.output;
+            res.headers["Content-Length"] = std::to_string(res.body.size());
+            
+            if (result.exit_status != 0)
+            {
+                res.statusCode = 500;
+                res.reasonPhrase = "Internal Server Error";
+            }
+        }
+        else
+        {
+            res = createErrorResponse(result.error, result.exit_status);
+        }
+        
         return res;
     }
     else
     {
         perror("fork");
-        res.statusCode = 500;
-        res.reasonPhrase = "Internal Server Error";
-        res.body = "<h1>CGI fork error</h1>";
-        res.headers["Content-Length"] = std::to_string(res.body.size());
-        res.headers["Content-Type"] = "text/html";
-        return res;
+        return createErrorResponse(CGI_FORK_ERROR);
     }
 }

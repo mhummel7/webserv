@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 10:28:27 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/17 11:05:54 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -20,25 +20,42 @@
 
 enum CGI_Error
 {
-	TIMEOUT,
-	UNKNOWN_ERROR,
-	INTERNAL_ERROR
+	CGI_SUCCESS = 0,
+    CGI_TIMEOUT,
+    CGI_INTERNAL_ERROR,
+    CGI_SCRIPT_ERROR,
+    CGI_FORK_ERROR,
+    CGI_PIPE_ERROR,
+    CGI_EXEC_ERROR
+};
+
+struct CGIResult
+{
+    std::string output;
+    int exit_status;
+    CGI_Error error;
+    
+    CGIResult() : exit_status(0), error(CGI_SUCCESS) {}
 };
 
 class CGIHandler
 {
 public:
-	CGIHandler();
-	~CGIHandler();
+    CGIHandler();
+    ~CGIHandler();
 
-	// Führt das CGI-Script aus und gibt HTTP-Response zurück
-	Response execute(const Request& req);
-	Response executeWith(const Request& req, const std::string& execPath, const std::string& scriptFile);
-	enum CGI_Error& status;
+    // Führt das CGI-Script aus und gibt HTTP-Response zurück
+    Response execute(const Request& req);
+    Response executeWith(const Request& req, const std::string& execPath, const std::string& scriptFile);
+    
 private:
-	// Hilfsfunktionen
-	std::map<std::string, std::string> buildEnv(const Request& req, const std::string& scriptPath);
-	std::string runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, const std::string& body, size_t timeout_ms);
+    // Hilfsfunktionen
+    std::map<std::string, std::string> buildEnv(const Request& req, const std::string& scriptPath);
+    CGIResult runCGI(const std::string& scriptPath, const std::map<std::string, std::string>& env, 
+                    const std::string& body, size_t timeout_ms);
+    
+    // Helper für Fehlerbehandlung
+    Response createErrorResponse(CGI_Error error, int script_exit_status = 0);
 };
 
 #endif
