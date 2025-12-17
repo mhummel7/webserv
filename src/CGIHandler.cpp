@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 16:38:19 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/17 10:33:50 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -181,11 +181,13 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
             // Check exit status
             if (WIFEXITED(status) && WEXITSTATUS(status) != 0)
             {
+                status = CGI_Error::INTERNAL_ERROR;
                 std::cerr << "CGI exited with code " << WEXITSTATUS(status) << std::endl;
                 return false;
             }
             if (WIFSIGNALED(status))
             {
+                status = CGI_Error::TIMEOUT;
                 std::cerr << "CGI killed by signal " << WTERMSIG(status) << std::endl;
                 return false;
             }
