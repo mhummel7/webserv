@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 16:21:47 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/17 08:55:10 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -498,7 +498,8 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
     }
     if (n < 0)
     {
-        return true;
+        closeClient(i);
+        return false;
     }
     return true;
 }
