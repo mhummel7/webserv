@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 11:12:05 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/17 13:07:42 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -262,7 +262,7 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
         else if (ret < 0)
         {
             cgi_error = CGI_INTERNAL_ERROR;
-            perror("waitpid");
+            std::cerr << "waitpid failed" << std::endl;
             return false;
         }
 
@@ -288,17 +288,17 @@ static bool read_with_poll_timeout(int fd, std::string& output, pid_t pid, size_
             {
                 continue;
             }
-            else if (bytes < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
+            else if (bytes < 0)
             {
                 cgi_error = CGI_INTERNAL_ERROR;
-                perror("read from CGI");
+                std::cerr << "read from CGI failed" << std::endl;
                 return false;
             }
         }
         else if (poll_ret < 0)
         {
             cgi_error = CGI_INTERNAL_ERROR;
-            perror("poll");
+            std::cerr << "poll failed" << std::endl;
             return false;
         }
     }
