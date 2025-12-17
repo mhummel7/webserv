@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
+/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 09:23:11 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/17 11:32:09 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -228,6 +228,9 @@ void Server::handleTimeouts(long now_ms, long IDLE_MS)
     for (size_t i = 0; i < fds.size(); ++i)
     {
             if (listener_fds.count(fds[i].fd)) continue;
+
+            if (!clients[i].tx.empty()) continue;
+                    
             if (now_ms - clients[i].last_active_ms > IDLE_MS)
             {
                 std::cerr << "[TIMEOUT] fd=" << fds[i].fd
@@ -472,6 +475,7 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             ResponseHandler handler;
             Response res = handler.handleRequest(req, lc, sc);
 
+            c.last_active_ms = now_ms;
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
             fds[i].events |=  POLLOUT;
