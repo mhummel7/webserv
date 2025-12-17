@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   Server.cpp                                         :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: mhummel <mhummel@student.42.fr>            +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 11:36:25 by mhummel          ###   ########.fr       */
+/*   Updated: 2025/12/17 11:47:53 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -140,7 +140,6 @@ static void setupBuiltinDefaultConfig()
         loc.path = "/root/cgi-bin";
         loc.root = "./root/cgi-bin";
         loc.cgi[".py"]  = "/usr/bin/python3";
-        loc.cgi[".php"] = "/usr/bin/php-cgi";
         loc.methods = {"GET", "POST"};
         srv.locations.push_back(loc);
     }
