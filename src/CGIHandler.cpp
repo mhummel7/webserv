@@ -3,10 +3,10 @@
 /*                                                        :::      ::::::::   */
 /*   CGIHandler.cpp                                     :+:      :+:    :+:   */
 /*                                                    +:+ +:+         +:+     */
-/*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
+/*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:14 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 11:41:04 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/16 16:38:19 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -310,6 +310,7 @@ std::string CGIHandler::runCGI(const std::string& scriptPath, const std::map<std
         {
             kill(pid, SIGKILL);
             waitpid(pid, NULL, 0);
+            
             std::cerr << "CGI script timed out after " << timeout_ms << "ms" << std::endl;
             return "<h1>CGI Timeout</h1><p>Script exceeded maximum execution time of " 
                    + std::to_string(timeout_ms / 1000) + " seconds</p>";

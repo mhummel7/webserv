@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/16 15:51:01 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/16 16:21:47 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -491,18 +491,16 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
         }
         return true;
     }
-    else if (n == 0)
+    if (n == 0)
     {
         closeClient(i);
         return false;
     }
-    else if (n < 0)
+    if (n < 0)
     {
-        closeClient(i);
-        return false;
-    }
-    else
         return true;
+    }
+    return true;
 }
 
 // send resposnse -> keep alive or close
@@ -520,18 +518,16 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
         c.tx.erase(0, static_cast<size_t>(m));
         c.last_active_ms = now_ms;
     }
-    else if (m == 0)
+    if (m == 0)
     {
         closeClient(i);
         return false;
     }
-    else if (m < 0)
+    if (m < 0)
     {
         closeClient(i);
         return false;
     }
-    else
-        return true;
 
     if (c.tx.empty())
     {
