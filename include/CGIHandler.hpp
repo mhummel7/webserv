@@ -6,7 +6,7 @@
 /*   By: leokubler <leokubler@student.42.fr>        +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:20 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/14 23:23:50 by leokubler        ###   ########.fr       */
+/*   Updated: 2025/12/17 10:28:27 by leokubler        ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -18,6 +18,13 @@
 #include <string>
 #include <map>
 
+enum CGI_Error
+{
+	TIMEOUT,
+	UNKNOWN_ERROR,
+	INTERNAL_ERROR
+};
+
 class CGIHandler
 {
 public:
@@ -27,6 +34,7 @@ public:
 	// Führt das CGI-Script aus und gibt HTTP-Response zurück
 	Response execute(const Request& req);
 	Response executeWith(const Request& req, const std::string& execPath, const std::string& scriptFile);
+	enum CGI_Error& status;
 private:
 	// Hilfsfunktionen
 	std::map<std::string, std::string> buildEnv(const Request& req, const std::string& scriptPath);
