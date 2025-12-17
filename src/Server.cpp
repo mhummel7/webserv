@@ -6,7 +6,7 @@
 /*   By: nlewicki <nlewicki@student.42.fr>          +#+  +:+       +#+        */
 /*                                                +#+#+#+#+#+   +#+           */
 /*   Created: 2025/10/21 09:27:36 by mhummel           #+#    #+#             */
-/*   Updated: 2025/12/17 08:59:50 by nlewicki         ###   ########.fr       */
+/*   Updated: 2025/12/17 09:23:11 by nlewicki         ###   ########.fr       */
 /*                                                                            */
 /* ************************************************************************** */
 
@@ -317,7 +317,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             ResponseHandler handler;
             Response res = handler.makeHtmlResponse(400, "<h1>400 Bad Request</h1>");
             c.tx = res.toString();
-            fds[i].events &= ~POLLIN;
             fds[i].events |= POLLOUT;
             std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
             return true;
@@ -331,7 +330,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 Response res = handler.makeHtmlResponse(400,
                     "<h1>400 Bad Request</h1><p>HTTP/1.1 requests must include a Host header</p>");
                 c.tx = res.toString();
-                fds[i].events &= ~POLLIN;
                 fds[i].events |= POLLOUT;
                 std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
                 return true;
@@ -397,7 +395,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
                 c.keep_alive   = false;
 
                 c.tx = res.toString();
-                fds[i].events &= ~POLLIN;
                 fds[i].events |=  POLLOUT;
 
                 c.rx.clear();
@@ -451,7 +448,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
             c.keep_alive = false;
 
             c.tx = res.toString();
-            fds[i].events &= ~POLLIN;
             fds[i].events |= POLLOUT;
 
             c.rx.clear();
@@ -478,7 +474,6 @@ bool Server::handleClientRead(size_t &i, long now_ms, char* buf, size_t buf_size
 
             c.keep_alive = res.keep_alive;
             c.tx         = res.toString();
-            fds[i].events &= ~POLLIN;
             fds[i].events |=  POLLOUT;
             std::cout << "[STATUS CODE] " << res.statusCode << std::endl;
         }
@@ -503,7 +498,10 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
     Client &c = clients[i];
 
     if (c.tx.empty())
+    {
+        fds[i].events &= ~POLLOUT;  // nicht mehr schreiben
         return true;
+    }
 
     ssize_t m = write(fds[i].fd, c.tx.data(), c.tx.size());
 
@@ -529,7 +527,6 @@ bool Server::handleClientWrite(size_t &i, long now_ms)
         {
             reset_for_next_request(c);
             fds[i].events &= ~POLLOUT;  // nicht mehr schreiben
-            fds[i].events |=  POLLIN;  // wieder lesen
             return true;
         }
         else
